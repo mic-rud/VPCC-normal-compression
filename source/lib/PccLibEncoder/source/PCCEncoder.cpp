@@ -67,6 +67,7 @@ PCCEncoder::~PCCEncoder() = default;
 void PCCEncoder::setParameters( const PCCEncoderParameters& params ) { params_ = params; }
 
 int PCCEncoder::encode( const PCCGroupOfFrames& sources, PCCContext& context, PCCGroupOfFrames& reconstructs ) {
+  std::cout << "PCCEncoder" << std::endl;
   size_t pointLocalReconstructionOriginal   = static_cast<size_t>( params_.pointLocalReconstruction_ );
   size_t layerCountMinus1Original           = params_.mapCountMinus1_;
   size_t singleMapPixelInterleavingOriginal = static_cast<size_t>( params_.singleMapPixelInterleaving_ );
