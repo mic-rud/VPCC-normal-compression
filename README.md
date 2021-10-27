@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Video Point Cloud Compression - VPCC - mpeg-pcc-tmc2 test model candidate software
 
 ## Building
@@ -190,4 +191,4 @@ Don't hesitate to contact me for any information:
 - Julien Ricard - MPEG-3DG-VPCC software coordinator (julien.ricard@interdigital.com). 
 
 
-###
+
