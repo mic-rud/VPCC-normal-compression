@@ -29,8 +29,8 @@ if [ ! -f $DECODER    ] ; then DECODER=${MAINDIR}/bin/PccAppDecoder;            
 if [ ! -f $DECODER    ] ; then DECODER=${MAINDIR}/bin/Release/PccAppDecoder.exe;   fi
 if [ ! -f $DECODER    ] ; then DECODER=${MAINDIR}/bin/Debug/PccAppDecoder.exe;     fi
 
-if [ ! -f $HDRCONVERT ] ; then HDRCONVERT=${EXTERNAL}/HDRTools/bin/HDRConvert;     fi
-if [ ! -f $HDRCONVERT ] ; then HDRCONVERT=${EXTERNAL}/HDRTools/bin/HDRConvert.exe; fi
+if [ ! -f $HDRCONVERT ] ; then HDRCONVERT=${MAINDIR}/dependencies/HDRTools/bin/HDRConvert;     fi
+if [ ! -f $HDRCONVERT ] ; then HDRCONVERT=${MAINDIR}/dependencies/HDRTools/bin/HDRConvert.exe; fi
 
 if [ ! -f $HMENCODER ] ; then HMENCODER=${EXTERNAL}/HM-16.18+SCM-8.7/bin/TAppEncoderStatic;                  fi
 if [ ! -f $HMENCODER ] ; then HMENCODER=${EXTERNAL}/HM-16.18+SCM-8.7/bin/vc2015/x64/Release/TAppEncoder.exe; fi

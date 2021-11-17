@@ -4707,6 +4707,12 @@ bool PCCEncoder::generateSegments( const PCCGroupOfFrames& sources, PCCContext& 
 }
 
 bool PCCEncoder::placeSegments( const PCCGroupOfFrames& sources, PCCContext& context ) {
+  // TODO: Write Context and Sources to files
+
+  // TODO: Write Parameters to file
+
+  // TODO: Run in python instead
+
   bool res = true;
   if ( params_.tileSegmentationType_ == 1 ) {
     generateTilesFromImage( context );
@@ -4776,6 +4782,7 @@ bool PCCEncoder::placeSegments( const PCCGroupOfFrames& sources, PCCContext& con
     }  // tile
     resizeGeometryVideo( context, params_.videoEncoderOccupancyCodecId_ );
   }
+  // TODO: Read results from python again
   return res;
 }
 
@@ -5036,10 +5043,10 @@ size_t PCCEncoder::generateTilesFromImage( PCCContext& context ) {
 void PCCEncoder::generateTilesFromSegments( PCCContext& context ) {
   size_t minimumTileWidth = std::ceil( ( params_.minimumImageWidth_ * 0.1 ) / 64.0 ) * 64;
   size_t minSize0 = 0, maxSize0 = 0;
-  for ( size_t fi = 0; fi < context.size(); fi++ ) {
-    auto& patchSegmentationFrame = context[fi].getTitleFrameContext();
-    auto& patches                = patchSegmentationFrame.getPatches();
-    std::sort( patches.begin(), patches.end(), []( PCCPatch& a, PCCPatch& b ) { return a.gt( b ); } );
+  for ( size_t fi = 0; fi < context.size(); fi++ ) { //Number of PCCAtlasFrameContexts
+    auto& patchSegmentationFrame = context[fi].getTitleFrameContext(); //Get title frame (PCCFrameContext)
+    auto& patches                = patchSegmentationFrame.getPatches(); //Get all patches()
+    std::sort( patches.begin(), patches.end(), []( PCCPatch& a, PCCPatch& b ) { return a.gt( b ); } ); // Sort by patch size
     if ( fi == 0 )
       minSize0 = std::min( patches[patches.size() - 1].getSizeU0(), patches[patches.size() - 1].getSizeV0() );
     for ( auto& patch : patches ) {

@@ -267,3 +267,6 @@ void PCCContext::allocOneLayerData() {
     }
   }
 }
+
+void PCCContext::writeToFile() {
+}

@@ -158,6 +158,7 @@ bool PCCImage<T, N>::write( const std::string fileName, const size_t nbyte ) {
   std::ofstream outfile( fileName, std::ios::binary );
   if ( write( outfile, nbyte ) ) {
     outfile.close();
+    std::cout << "Writing to " << fileName << std::endl;
     return true;
   }
   return false;

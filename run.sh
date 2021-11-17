@@ -5,7 +5,11 @@
 	--config=cfg/sequence/longdress_vox10.cfg \
 	--config=cfg/rate/ctc-r3.cfg \
 	--uncompressedDataFolder=../../../mpeg_datasets/CfP/datasets/Dynamic_Objects/People/ \
-	--frameCount=1 \
+	--frameCount=180 \
 	--colorSpaceConversionPath=../external/HDRTools/bin/HDRConvert \
 	--reconstructedDataPath=S26C03R03_rec_%04d.ply \
-	--compressedStreamPath=S26C03R03.bin 
+	--compressedStreamPath=S26C03R03.bin \
+	--keepIntermediateFiles \
+	--occupancyMapRefinement \
+	--constrainedPack \
+	--packingStrategy=2 

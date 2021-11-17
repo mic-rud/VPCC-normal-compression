@@ -462,7 +462,7 @@ bool PCCPointSet3::write( const std::string& fileName, const bool asAscii ) {
   return true;
 }
 bool PCCPointSet3::read( const std::string& fileName, const bool readNormals ) {
-  std::ifstream ifs( fileName);
+  std::ifstream ifs( fileName, std::ifstream::in );
   if ( !ifs.is_open() ) { 
     std::cout << "Error: Stream not open! Filename: " << fileName << std::endl;
     return false; 

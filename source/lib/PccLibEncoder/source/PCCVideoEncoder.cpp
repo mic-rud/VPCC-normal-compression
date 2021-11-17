@@ -254,6 +254,8 @@ void PCCVideoEncoder::patchColorSubsmple( PCCVideo<T, 3>&    video,
           }
         }
       }
+      // LOGGING: Save image
+      tmpImage.write("TempImage.bytes", 1);
       // perform downsampling
       PCCVideo<T, 3> tmpVideo;
       tmpVideo.resize( 1 );
