@@ -39,6 +39,8 @@
 #include "PCCPatchSegmenter.h"
 #include "PCCPatch.h"
 
+#include <fstream>
+
 using namespace pcc;
 
 void PCCPatchSegmenter3::setNbThread( size_t nbThread ) {
@@ -143,6 +145,17 @@ void PCCPatchSegmenter3::compute( const PCCPointSet3&                 geometry,
   segmentPatches( geometry, frameIndex, kdtree, params, partition, patches, patchPartition, resampledPatchPartition,
                   rawPoints, resampled, subPointCloud, distanceSrcRec, normalsGen, orientations, orientationCount );
   std::cout << "[done]" << std::endl;
+    
+  // Write points to file 
+  std::ofstream datastream;
+  datastream.open("normals.txt", std::ios::out | std::ios::trunc);
+  auto& positions = geometry.getPositions();
+  for (int i=0; i < positions.size(); ++i) {
+    auto& point = positions[i];
+    auto& normal = partition[i];
+    datastream << point[0] << ", " << point[1] << ", " << point[2] << ", " << normal << std::endl;
+  }
+  datastream.close();
 }
 
 void PCCPatchSegmenter3::convertPointsToVoxels( const PCCPointSet3& source,

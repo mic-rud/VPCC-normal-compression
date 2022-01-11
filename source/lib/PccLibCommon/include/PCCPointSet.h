@@ -210,6 +210,7 @@ class PCCPointSet3 {
     reflectances_[index] = reflectance;
   }
   std::vector<PCCPoint3D>&    getPositions() { return positions_; }
+  const std::vector<PCCPoint3D>&    getPositions() const { return positions_; }
   std::vector<PCCColor3B>&    getColors() { return colors_; }
   std::vector<PCCColor16bit>& getColors16bit() { return colors16bit_; }
   std::vector<uint16_t>&      getReflectances() { return reflectances_; }
@@ -501,6 +502,9 @@ class PCCPointSet3 {
   void                 reorder();
   void                 reorder( PCCPointSet3& newPointcloud, bool dropDuplicates );
   void                 swap( PCCPointSet3& newPointcloud );
+
+  //Development functions
+  void                 patchedPointsToFile();
 
  private:
   void distance( const PCCPointSet3& pointcloud,
