@@ -286,7 +286,14 @@ bool parseParameters( int                   argc,
       encoderParams.minimumImageHeight_,
       "Minimum height of packed patch frame" )
 
-    // occupancy map
+
+    // Multiple Streams 
+    ( "orientationSeparation",
+      encoderParams.orientationSeparation_,
+      encoderParams.orientationSeparation_,
+      "Encode into multiple streams \n" )
+
+     // occupancy map
     ( "maxCandidateCount",
       encoderParams.maxCandidateCount_,
       encoderParams.maxCandidateCount_,
@@ -1003,14 +1010,141 @@ bool parseParameters( int                   argc,
   return true;
 }
 
-int compressVideo( const PCCEncoderParameters& encoderParams,
-                   const PCCMetricsParameters& metricsParams,
-                   StopwatchUserTime&          clock ) {
+int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
+                         const PCCMetricsParameters& metricsParams,
+                         StopwatchUserTime&          clock ) {
   const size_t startFrameNumber0        = encoderParams.startFrameNumber_;
   size_t       endFrameNumber0          = encoderParams.startFrameNumber_ + encoderParams.frameCount_;
   const size_t groupOfFramesSize0       = ( std::max )( size_t( 1 ), encoderParams.groupOfFramesSize_ );
   size_t       startFrameNumber         = startFrameNumber0;
   size_t       reconstructedFrameNumber = encoderParams.startFrameNumber_;
+  bool         orientationSeparation    = encoderParams.orientationSeparation_;
+
+  PCCLogger logger;
+  logger.initilalize( removeFileExtension( encoderParams.compressedStreamPath_ ), true );
+  std::unique_ptr<uint8_t> buffer;
+  size_t                   contextIndex = 0;
+  size_t                   orientationCount = 0;
+  PCCEncoder               encoder;
+  PCCMetrics               metrics;
+  PCCChecksum              checksum;
+  PCCBitstreamStat         bitstreamStat;
+  SampleStreamV3CUnit      ssvu;
+  encoder.setLogger( logger );
+  encoder.setParameters( encoderParams );
+  metrics.setParameters( metricsParams );
+  checksum.setParameters( metricsParams );
+
+  if ( encoderParams.additionalProjectionPlaneMode_ == 0 ) {
+    orientationCount = 6;
+  } else if ( encoderParams.additionalProjectionPlaneMode_ == 1 ) {
+    orientationCount = 10;
+  } else if ( encoderParams.additionalProjectionPlaneMode_ == 2 ) {
+    orientationCount = 10;
+  } else if ( encoderParams.additionalProjectionPlaneMode_ == 3 ) {
+    orientationCount = 10;
+  } else if ( encoderParams.additionalProjectionPlaneMode_ == 4 ) {
+    orientationCount = 18;
+  }
+
+  // Place to get/set default values for gof metadata enabled flags (in sequence level).
+  while ( startFrameNumber < endFrameNumber0 ) {
+    size_t     endFrameNumber = min( startFrameNumber + groupOfFramesSize0, endFrameNumber0 );
+    std::vector<PCCContext> contexts(orientationCount);
+    std::cout << "Context size" << contexts.size();
+    auto& context = contexts[0]; //TEMP
+    for (size_t i = 0; i < orientationCount; ++i) {
+      contexts[i].setBitstreamStat( bitstreamStat );
+      contexts[i].addV3CParameterSet( contextIndex );
+      contexts[i].setActiveVpsId( contextIndex );
+    }
+
+    PCCGroupOfFrames sources;
+    PCCGroupOfFrames reconstructs;
+    clock.start();
+    if ( !sources.load( encoderParams.uncompressedDataPath_, startFrameNumber, endFrameNumber,
+                        encoderParams.colorTransform_, false, encoderParams.nbThread_ ) ) {
+      return -1;
+    }
+    if ( sources.getFrameCount() < endFrameNumber - startFrameNumber ) {
+      endFrameNumber  = startFrameNumber + sources.getFrameCount();
+      endFrameNumber0 = endFrameNumber;
+    }
+    std::cout << "Compressing " << contextIndex << " frames " << startFrameNumber << " -> " << endFrameNumber << "..."
+              << std::endl;
+    std::cout << "Context size in encoder: " << contexts.size() << std::endl;
+    int                ret = encoder.encodeMultiple( sources, contexts, reconstructs );
+    PCCBitstreamWriter bitstreamWriter;
+#ifdef BITSTREAM_TRACE
+    bitstreamWriter.setLogger( logger );
+#endif
+    ret |= bitstreamWriter.encode( context, ssvu );
+    clock.stop();
+    PCCGroupOfFrames normals;
+    if ( metricsParams.computeMetrics_ ) {
+      bool bRunMetric = true;
+      if ( !metricsParams.normalDataPath_.empty() ) {
+        if ( !normals.load( metricsParams.normalDataPath_, startFrameNumber, endFrameNumber, COLOR_TRANSFORM_NONE,
+                            true ) ) {
+          bRunMetric = false;
+        }
+      }
+      if ( bRunMetric ) { metrics.compute( sources, reconstructs, normals ); }
+    }
+    if ( metricsParams.computeChecksum_ ) {
+      if ( encoderParams.rawPointsPatch_ && encoderParams.reconstructRawType_ != 0 ) {
+        checksum.computeSource( sources );
+        checksum.computeReordered( reconstructs );
+      }
+      checksum.computeReconstructed( reconstructs );
+    }
+    if ( ret != 0 ) { return ret; }
+    if ( !encoderParams.reconstructedDataPath_.empty() ) {
+      reconstructs.write( encoderParams.reconstructedDataPath_, reconstructedFrameNumber );
+    }
+    normals.clear();
+    sources.clear();
+    reconstructs.clear();
+    startFrameNumber = endFrameNumber;
+    contextIndex++;
+  }
+
+  PCCBitstream bitstream;
+#if defined( BITSTREAM_TRACE ) || defined( CONFORMANCE_TRACE )
+  bitstream.setLogger( logger );
+  bitstream.setTrace( true );
+#endif
+
+  bitstreamStat.setHeader( bitstream.size() );
+  PCCBitstreamWriter bitstreamWriter;
+  size_t headerSize = bitstreamWriter.write( ssvu, bitstream, encoderParams.forcedSsvhUnitSizePrecisionBytes_ );
+  bitstreamStat.incrHeader( headerSize );
+  bitstream.write( encoderParams.compressedStreamPath_ );
+  bitstreamStat.trace();
+  std::cout << "Total bitstream size " << bitstream.size() << " B" << std::endl;
+  bitstream.computeMD5();
+
+  if ( metricsParams.computeMetrics_ ) { metrics.display(); }
+  bool checksumEqual = true;
+  if ( metricsParams.computeChecksum_ ) {
+    if ( encoderParams.rawPointsPatch_ && encoderParams.reconstructRawType_ != 0 ) {
+      checksumEqual = checksum.compareSrcRec();
+    }
+    checksum.write( encoderParams.compressedStreamPath_ );
+  }
+  return checksumEqual ? 0 : -1;
+}
+
+
+int compressSingleVideo( const PCCEncoderParameters& encoderParams,
+                           const PCCMetricsParameters& metricsParams,
+                           StopwatchUserTime&          clock ) {
+  const size_t startFrameNumber0        = encoderParams.startFrameNumber_;
+  size_t       endFrameNumber0          = encoderParams.startFrameNumber_ + encoderParams.frameCount_;
+  const size_t groupOfFramesSize0       = ( std::max )( size_t( 1 ), encoderParams.groupOfFramesSize_ );
+  size_t       startFrameNumber         = startFrameNumber0;
+  size_t       reconstructedFrameNumber = encoderParams.startFrameNumber_;
+  bool         orientationSeparation    = encoderParams.orientationSeparation_;
 
   PCCLogger logger;
   logger.initilalize( removeFileExtension( encoderParams.compressedStreamPath_ ), true );
@@ -1106,6 +1240,19 @@ int compressVideo( const PCCEncoderParameters& encoderParams,
     checksum.write( encoderParams.compressedStreamPath_ );
   }
   return checksumEqual ? 0 : -1;
+}
+
+
+int compressVideo( const PCCEncoderParameters& encoderParams,
+                   const PCCMetricsParameters& metricsParams,
+                   StopwatchUserTime&          clock ) {
+  if (encoderParams.orientationSeparation_) {
+    std::cout << "Compressing Multiple Videos " << std::endl;
+    return compressMultipleVideo (encoderParams, metricsParams, clock); 
+  } else {
+    std::cout << "Compressing Single Video " << std::endl;
+    return compressSingleVideo (encoderParams, metricsParams, clock); 
+  }
 }
 
 int main( int argc, char* argv[] ) {

@@ -118,6 +118,7 @@ class PCCEncoder : public PCCCodec {
   void setParameters( const PCCEncoderParameters& params );
 
   int encode( const PCCGroupOfFrames& sources, PCCContext& context, PCCGroupOfFrames& reconstructs );
+  int encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCCContext>& context, PCCGroupOfFrames& reconstructs );
 
   void setPostProcessingSeiParameters( GeneratePointCloudParameters& params, PCCContext& context );
   void setGeneratePointCloudParameters( GeneratePointCloudParameters& gpcParams, PCCContext& context );
@@ -176,8 +177,14 @@ class PCCEncoder : public PCCCodec {
 
   //**patch segmentation**//
   bool generateSegments( const PCCGroupOfFrames& sources, PCCContext& context );
+  bool generateSegments( const PCCGroupOfFrames& sources, std::vector<PCCContext>& contexts );
   bool generateSegments( const PCCPointSet3&                 source,
                          PCCAtlasFrameContext&               frameContext,
+                         const PCCPatchSegmenter3Parameters& segmenterParams,
+                         size_t                              frameIndex,
+                         float&                              distanceSrcRec );
+  bool generateSegments( const PCCPointSet3&                 source,
+                         std::vector<std::reference_wrapper<PCCAtlasFrameContext>>  frameContexts,
                          const PCCPatchSegmenter3Parameters& segmenterParams,
                          size_t                              frameIndex,
                          float&                              distanceSrcRec );

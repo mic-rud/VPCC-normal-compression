@@ -112,6 +112,12 @@ class PCCPatchSegmenter3 {
                 std::vector<PCCPatch>&              patches,
                 std::vector<PCCPointSet3>&          subPointCloud,
                 float&                              distanceSrcRec );
+  void compute( const PCCPointSet3&                 geometry,
+                const size_t                        frameIndex,
+                const PCCPatchSegmenter3Parameters& params,
+                std::vector<std::reference_wrapper<std::vector<PCCPatch>>> allPatches,
+                std::vector<std::reference_wrapper<std::vector<PCCPointSet3>>>  subPointClouds,
+                float&                              distanceSrcRec );
 
   void convertPointsToVoxels( const PCCPointSet3& source,
                               size_t              geoBits,
@@ -204,6 +210,22 @@ class PCCPatchSegmenter3 {
                        std::vector<size_t>                 rawPoints,
                        PCCPointSet3&                       resampled,
                        std::vector<PCCPointSet3>&          subPointCloud,
+                       float&                              distanceSrcRec,
+                       const PCCNormalsGenerator3&         normalsGen,
+                       const PCCVector3D*                  orientations,
+                       const size_t                        orientationCount );
+
+  void segmentPatches( const PCCPointSet3&                 points,
+                       const size_t                        frameIndex,
+                       const PCCKdTree&                    kdtree,
+                       const PCCPatchSegmenter3Parameters& params,
+                       std::vector<size_t>&                partition,
+                       std::vector<std::reference_wrapper<std::vector<PCCPatch>>> allPatches,
+                       std::vector<size_t>&                patchPartition,
+                       std::vector<size_t>&                resampledPatchPartition,
+                       std::vector<size_t>                 rawPoints,
+                       PCCPointSet3&                       resampled,
+                       std::vector<std::reference_wrapper<std::vector<PCCPointSet3>>> subPointClouds,
                        float&                              distanceSrcRec,
                        const PCCNormalsGenerator3&         normalsGen,
                        const PCCVector3D*                  orientations,

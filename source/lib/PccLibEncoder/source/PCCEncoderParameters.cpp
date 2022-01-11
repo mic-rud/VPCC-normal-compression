@@ -217,6 +217,9 @@ PCCEncoderParameters::PCCEncoderParameters() {
   minGradient_              = 15.0;
   minNumHighGradientPoints_ = 256;
 
+  // MultipleStreams
+  orientationSeparation_ = false;
+
   // Patch border filtering
   pbfEnableFlag_    = false;
   pbfPassesCount_   = 0;
@@ -347,6 +350,7 @@ void PCCEncoderParameters::print() {
     std::cout << "\t    absoluteT1                              " << absoluteT1_ << std::endl;
   }
   std::cout << "\t constrainedPack                            " << constrainedPack_ << std::endl;
+  std::cout << "\t orientationSeparation                      " << orientationSeparation_ << std::endl;
   std::cout << "\t maxNumRefPatchList                         " << maxNumRefAtlasList_ << std::endl;
   std::cout << "\t maxNumRefIndex                             " << maxNumRefAtlasFrame_ << std::endl;
   std::cout << "\t Segmentation" << std::endl;

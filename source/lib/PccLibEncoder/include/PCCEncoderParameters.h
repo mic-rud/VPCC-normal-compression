@@ -205,6 +205,9 @@ class PCCEncoderParameters {
   // EOM
   bool enhancedOccupancyMapCode_;
 
+  // Multiple Streams for orientations
+  bool orientationSeparation_;
+
   // Lossy occupancy Map coding
   size_t offsetLossyOM_;
   size_t thresholdLossyOM_;
