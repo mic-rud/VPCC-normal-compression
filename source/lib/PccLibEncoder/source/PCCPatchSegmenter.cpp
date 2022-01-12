@@ -166,7 +166,6 @@ void PCCPatchSegmenter3::compute( const PCCPointSet3&                 geometry,
                                   float&                              distanceSrcRec ) {
   PCCVector3D* orientations     = nullptr;
   size_t       orientationCount = allPatches.size();
-  std::cout << "All Patches size: " << orientationCount << std::endl;
   if ( params.additionalProjectionPlaneMode_ == 0 ) {
     orientations     = orientations6;
   } else if ( params.additionalProjectionPlaneMode_ == 1 ) {

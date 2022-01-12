@@ -67,7 +67,6 @@ PCCEncoder::~PCCEncoder() = default;
 void PCCEncoder::setParameters( const PCCEncoderParameters& params ) { params_ = params; }
 
 int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCCContext>& contexts, PCCGroupOfFrames& reconstructs ) {
-  std::cout << "Context size in encoder: " << contexts.size() << std::endl;
   PCCContext context; // TEMP
 
   // #1 Split Point Cloud into patches and subpointclouds
@@ -106,628 +105,695 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
 
   // Segmentation
   generateSegments( sources, contexts );
-  return 0;
-
-  /*
-
 
   // #2 Create Geometry and Aux info for each context
-  // Init context and tiles
-  params_.initializeContext( context );
-
-  // Segment Placement
-  placeSegments( sources, context );
-
-  // updatePartitionInformation
-  if ( params_.tileSegmentationType_ > 1 && params_.numMaxTilePerFrame_ > 1 ) {
-    placeTiles( context, params_.minimumImageWidth_, params_.minimumImageHeight_ );
-  }
-  if ( params_.tileSegmentationType_ > 0 ) { replaceFrameContext( context ); }
-
   PCCVideoEncoder videoEncoder;
   videoEncoder.setLogger( *logger_ );
-  size_t            atlasIndex = context.getAtlasIndex();
   const size_t      pointCount = sources[0].getPointCount();
-  auto&             sps        = context.getVps();
-  std::stringstream path;
-  path << removeFileExtension( params_.compressedStreamPath_ ) << "_GOF" << sps.getV3CParameterSetId() << "_";
-  sps.setFrameWidth( atlasIndex, static_cast<uint16_t>( frames[0].getAtlasFrameWidth() ) );
-  sps.setFrameHeight( atlasIndex, static_cast<uint16_t>( frames[0].getAtlasFrameHeight() ) );
-  for ( auto& asps : context.getAtlasSequenceParameterSetList() ) {
-    asps.setFrameHeight( sps.getFrameHeight( atlasIndex ) );
-    asps.setFrameWidth( sps.getFrameWidth( atlasIndex ) );
-  }
+  std::vector<GeneratePointCloudParameters> gpcParams(contexts.size());
+  std::vector<std::vector<std::vector<uint32_t>>> allPartitions(contexts.size());
+  std::vector<std::stringstream> paths(contexts.size());
+  std::vector<std::vector<std::vector<PCCPointSet3>>> partialReconstructs(contexts.size()); // orientation -> frames -> tiles
 
-  // GENERATE OCCUPANCY MAP
-  generateOccupancyMap( context, true );
+  for (size_t i = 0; i < contexts.size(); ++i) {
+    auto& context = contexts[i];
+    auto& frames = context.getFrames();
 
-  // ENCODE OCCUPANCY MAP
-  TRACE_PICTURE( "Occupancy\n" );
-  TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0\n" );
-  auto& videoBitstream = context.createVideoBitstream( VIDEO_OCCUPANCY );
-  generateOccupancyMapVideo( sources, context );
-  auto& videoOccupancyMap = context.getVideoOccupancyMap();
-  videoEncoder.compress( videoOccupancyMap,                         // video
-                         path.str(),                                // path
-                         params_.occupancyMapQP_,                   // QP
-                         videoBitstream,                            // bitstream
-                         params_.occupancyMapConfig_,               // config file
-                         params_.videoEncoderOccupancyPath_,        // encoder path
-                         params_.videoEncoderOccupancyCodecId_,     // Codec id
-                         params_.byteStreamVideoCoderOccupancy_,    // byteStreamVideoCoder
-                         context,                                   // context
-                         ( params_.EOMFixBitCount_ <= 8 ) ? 1 : 2,  // nByte
-                         false,                                     // use444CodecIo
-                         false,                                     // use3dmv
-                         false,                                     // usePccRDO
-                         0,                                         // SHVC Layer Index
-                         0,                                         // SHVC ratio X
-                         0,                                         // SHVC ratio Y
-                         8,                                         // internalBitDepth
-                         false,                                     // useConversion
-                         params_.keepIntermediateFiles_ );          // keepIntermediateFiles
-  if ( params_.offsetLossyOM_ > 0 ) { modifyOccupancyMap( sources, context ); }
-  if ( !params_.useRawPointsSeparateVideo_ && ( params_.rawPointsPatch_ || params_.lossyRawPointsPatch_ ) ) {
-    markRawPatchLocationOccupancyMapVideo( context );
-  }
-  if ( params_.tileSegmentationType_ > 0 ) {
-    generateAtlasBlockToPatchFromOccupancyMapVideo( context, params_.occupancyResolution_,
-                                                    params_.occupancyPrecision_ );
-  } else {
-    generateBlockToPatchFromOccupancyMapVideo( context, params_.occupancyResolution_, params_.occupancyPrecision_ );
-  }
+    // Init context and tiles
+    params_.initializeContext( context );
 
-  // Generate GEOMETRY IMAGE & dilation
-  generateGeometryVideo( sources, context );
+    // Segment Placement
+    placeSegments( sources, context );
 
-  // ENCODE GEOMETRY IMAGE
-  TRACE_PICTURE( "Geometry\n" );
-  TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0\n" );
-  if ( params_.use3dmc_ || params_.usePccRDO_ ) { create3DMotionEstimationFiles( context, path.str() ); }
-  auto&  gi                      = context.getVps().getGeometryInformation( atlasIndex );
-  size_t geometryVideoBitDepth   = gi.getGeometry2dBitdepthMinus1() + 1;
-  size_t geometryMPVideoBitDepth = gi.getGeometry2dBitdepthMinus1() + 1;
-  size_t nbyteGeo                = ( geometryVideoBitDepth <= 8 ) ? 1 : 2;
-  size_t nbyteGeoMP              = ( geometryMPVideoBitDepth <= 8 ) ? 1 : 2;
-  size_t internalBitDepth        = 10;
-  if ( params_.rawPointsPatch_ ) { internalBitDepth = geometryVideoBitDepth; }
-  auto&       videoBitstreamD0 = params_.multipleStreams_ ? context.createVideoBitstream( VIDEO_GEOMETRY_D0 )
-                                                          : context.createVideoBitstream( VIDEO_GEOMETRY );
-  auto&       videoGeometry    = context.getVideoGeometryMultiple()[0];
-  std::string geometryConfigFile =
-      params_.multipleStreams_
-          ? params_.geometry0Config_
-          : ( params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.geometryConfig_ ) : params_.geometryConfig_ );
-  videoEncoder.compress( videoGeometry,                             // video
-                         path.str(),                                // path
-                         params_.geometryQP_ + params_.deltaQPD0_,  // QP
-                         videoBitstreamD0,                          // bitstream
-                         geometryConfigFile,                        // config file
-                         params_.videoEncoderGeometryPath_,         // encoder path
-                         params_.videoEncoderGeometryCodecId_,      // Codec id
-                         params_.byteStreamVideoCoderGeometry_,     // byteStreamVideoCoder
-                         context,                                   // context
-                         nbyteGeo,                                  // nbyte
-                         false,                                     // use444CodecIo
-                         params_.use3dmc_,                          // use3dmv
-                         params_.usePccRDO_,                        // usePccRDO
-                         params_.shvcLayerIndex_,                   // SHVC layer index
-                         params_.shvcRateX_,                        // SHVC rate X
-                         params_.shvcRateY_,                        // SHVC rate Y
-                         internalBitDepth,                          // internalBitDepth
-                         false,                                     // useConversion
-                         params_.keepIntermediateFiles_ );          // keep intermediate
-  size_t sizeGeometryVideo = videoBitstreamD0.size();
-  std::cout << "sizeGeometryVideo: " << sizeGeometryVideo << std::endl;
-  if ( params_.multipleStreams_ ) {
-    if ( params_.lossyRawPointsPatch_ ) {
-      std::cout << "Error: lossyRawPointsPatch has not been implemented for "
-                   "absoluteD1_ = 0 as "
-                   "yet. Exiting... "
-                << std::endl;
-      std::exit( -1 );
+    // updatePartitionInformation
+    if ( params_.tileSegmentationType_ > 1 && params_.numMaxTilePerFrame_ > 1 ) {
+      placeTiles( context, params_.minimumImageWidth_, params_.minimumImageHeight_ );
     }
-    if ( !params_.absoluteD1_ ) {
-      // Form differential video geometry1
-      for ( size_t f = 0; f < frames.size(); ++f ) {
-        auto& frame1 = context.getVideoGeometryMultiple()[1].getFrame( f );
-        predictGeometryFrame( frames[f].getTitleFrameContext(), videoGeometry.getFrame( f ), frame1 );
-        dilate3DPadding( sources[f], frames[f], frames[f].getTitleFrameContext(), frame1,
-                         videoOccupancyMap.getFrame( f ) );
-      }
+    if ( params_.tileSegmentationType_ > 0 ) { replaceFrameContext( context ); }
+
+    size_t            atlasIndex = context.getAtlasIndex();
+    auto&             sps        = context.getVps();
+    auto&             path       = paths[i];
+    path << removeFileExtension( params_.compressedStreamPath_ ) << "_GOF" << sps.getV3CParameterSetId() << "_Orientation_" << i << "_";
+    sps.setFrameWidth( atlasIndex, static_cast<uint16_t>( frames[0].getAtlasFrameWidth() ) );
+    sps.setFrameHeight( atlasIndex, static_cast<uint16_t>( frames[0].getAtlasFrameHeight() ) );
+    for ( auto& asps : context.getAtlasSequenceParameterSetList() ) {
+      asps.setFrameHeight( sps.getFrameHeight( atlasIndex ) );
+      asps.setFrameWidth( sps.getFrameWidth( atlasIndex ) );
     }
 
-    // Compress geometry1
+    // GENERATE OCCUPANCY MAP
+    generateOccupancyMap( context, true );
+
+    // ENCODE OCCUPANCY MAP
+    TRACE_PICTURE( "Occupancy\n" );
+    TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0\n" );
+    auto& videoBitstream = context.createVideoBitstream( VIDEO_OCCUPANCY );
+    generateOccupancyMapVideo( sources, context );
+    auto& videoOccupancyMap = context.getVideoOccupancyMap();
+    videoEncoder.compress( videoOccupancyMap,                         // video
+                          path.str(),                                // path
+                          params_.occupancyMapQP_,                   // QP
+                          videoBitstream,                            // bitstream
+                          params_.occupancyMapConfig_,               // config file
+                          params_.videoEncoderOccupancyPath_,        // encoder path
+                          params_.videoEncoderOccupancyCodecId_,     // Codec id
+                          params_.byteStreamVideoCoderOccupancy_,    // byteStreamVideoCoder
+                          context,                                   // context
+                          ( params_.EOMFixBitCount_ <= 8 ) ? 1 : 2,  // nByte
+                          false,                                     // use444CodecIo
+                          false,                                     // use3dmv
+                          false,                                     // usePccRDO
+                          0,                                         // SHVC Layer Index
+                          0,                                         // SHVC ratio X
+                          0,                                         // SHVC ratio Y
+                          8,                                         // internalBitDepth
+                          false,                                     // useConversion
+                          params_.keepIntermediateFiles_ );          // keepIntermediateFiles
+    if ( params_.offsetLossyOM_ > 0 ) { modifyOccupancyMap( sources, context ); }
+    if ( !params_.useRawPointsSeparateVideo_ && ( params_.rawPointsPatch_ || params_.lossyRawPointsPatch_ ) ) {
+      markRawPatchLocationOccupancyMapVideo( context );
+    }
+    if ( params_.tileSegmentationType_ > 0 ) {
+      generateAtlasBlockToPatchFromOccupancyMapVideo( context, params_.occupancyResolution_,
+                                                      params_.occupancyPrecision_ );
+    } else {
+      generateBlockToPatchFromOccupancyMapVideo( context, params_.occupancyResolution_, params_.occupancyPrecision_ );
+    }
+
+    // Generate GEOMETRY IMAGE & dilation
+    generateGeometryVideo( sources, context );
+
+    // ENCODE GEOMETRY IMAGE
     TRACE_PICTURE( "Geometry\n" );
-    TRACE_PICTURE( "MapIdx = 1, AuxiliaryVideoFlag = 0\n" );
-    auto& videoGeometryD1  = context.getVideoGeometryMultiple()[1];
-    auto& videoBitstreamD1 = context.createVideoBitstream( VIDEO_GEOMETRY_D1 );
-    videoEncoder.compress( videoGeometryD1,                           // video
-                           path.str(),                                // path
-                           params_.geometryQP_ + params_.deltaQPD1_,  // QP
-                           videoBitstreamD1,                          // bitstream
-                           params_.geometry1Config_,                  // config file
-                           params_.videoEncoderGeometryPath_,         // encoder path
-                           params_.videoEncoderGeometryCodecId_,      // Codec id
-                           params_.byteStreamVideoCoderGeometry_,     // byteStreamVideoCoder
-                           context,                                   // context
-                           nbyteGeo,                                  // nbyte
-                           false,                                     // use444CodecIo
-                           params_.use3dmc_,                          // use3dmv
-                           params_.usePccRDO_,                        // usePccRDO
-                           params_.shvcLayerIndex_,                   // SHVC layer index
-                           params_.shvcRateX_,                        // SHVC rate X
-                           params_.shvcRateY_,                        // SHVC rate Y
-                           internalBitDepth,                          // internalBitDepth
-                           false,                                     // useConversion
-                           params_.keepIntermediateFiles_ );          // keep intermediate
-    size_t sizeGeometryVideoD1 = videoBitstreamD1.size();
-    std::cout << "sizeGeometryVideoD1: " << sizeGeometryVideoD1 << std::endl;
-    std::cout << "geometryVideo ->" << ( sizeGeometryVideo + sizeGeometryVideoD1 ) << "=" << sizeGeometryVideo << "+"
-              << sizeGeometryVideoD1 << " B ("
-              << ( ( sizeGeometryVideo + sizeGeometryVideoD1 ) * 8.0 ) / ( 2 * frames.size() * pointCount ) << " bpp)"
-              << std::endl;
-  }
-  auto& asps = context.getAtlasSequenceParameterSet( atlasIndex );
-  if ( asps.getRawPatchEnabledFlag() && asps.getAuxiliaryVideoEnabledFlag() ) {
-    TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 1\n" );
-    std::cout << "*******Video: Aux (Geometry) ********" << std::endl;
-    placeAuxiliaryPointsTiles( context );
-    auto& videoRawPointsGeometryBitstream = context.createVideoBitstream( VIDEO_GEOMETRY_RAW );
-    generateRawPointsGeometryVideo( context );
-    auto& videoRawPointsGeometry = context.getVideoRawPointsGeometry();
-    videoEncoder.compress( videoRawPointsGeometry,                 // video,
-                           path.str(),                             // path,
-                           params_.auxGeometryQP_,                 // qp,
-                           videoRawPointsGeometryBitstream,        // bitstream,
-                           params_.geometryAuxVideoConfig_,        // encoderConfig,
-                           params_.videoEncoderGeometryPath_,      // encoderPath,
-                           params_.videoEncoderGeometryCodecId_,   // codecId,
-                           params_.byteStreamVideoCoderGeometry_,  // byteStreamVideoCoder,
-                           context,                                // context
-                           nbyteGeoMP,                             // nbyte
-                           false,                                  // use444CodecIo
-                           false,                                  // use3dmv
-                           false,                                  // usePccRDO
-                           params_.shvcLayerIndex_,                // SHVC layer index
-                           params_.shvcRateX_,                     // SHVC rate X
-                           params_.shvcRateY_,                     // SHVC rate Y
-                           internalBitDepth,                       // internalBitDepth
-                           false,                                  // useConversion
-                           params_.keepIntermediateFiles_ );       // keepIntermediateFiles
-  }
-  // Tile summary
-  printf( "****TileInfo***Summary******************\n" );
-  fflush( stdout );
-  for ( size_t fi = 0; fi < context.size(); fi++ ) {
-    for ( size_t ti = 0; ti < context[fi].getNumTilesInAtlasFrame(); ti++ ) {
-      auto& tile = context[fi].getTile( ti );
-      printf(
-          "frame %zu tile %zu: (%zu,%zu) (%zux%zu) patchCount:%zu regPoints:%zu, rawPatch:%zu rawPoints:%zu "
-          "eomPatch:%zu eomPoints:%zu\n",
-          fi, ti, tile.getLeftTopXInFrame(), tile.getLeftTopYInFrame(), tile.getWidth(), tile.getHeight(),
-          tile.getPatches().size(), tile.getTotalNumberOfRegularPoints(), tile.getRawPointsPatches().size(),
-          tile.getRawPointsPatches().size() == 0 ? 0 : tile.getRawPointsPatch( 0 ).getNumberOfRawPoints(),
-          tile.getEomPatches().size(), tile.getEomPatches().size() == 0 ? 0 : tile.getEomPatch( 0 ).eomCount_ );
+    TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0\n" );
+    if ( params_.use3dmc_ || params_.usePccRDO_ ) { create3DMotionEstimationFiles( context, path.str() ); }
+    auto&  gi                      = context.getVps().getGeometryInformation( atlasIndex );
+    size_t geometryVideoBitDepth   = gi.getGeometry2dBitdepthMinus1() + 1;
+    size_t geometryMPVideoBitDepth = gi.getGeometry2dBitdepthMinus1() + 1;
+    size_t nbyteGeo                = ( geometryVideoBitDepth <= 8 ) ? 1 : 2;
+    size_t nbyteGeoMP              = ( geometryMPVideoBitDepth <= 8 ) ? 1 : 2;
+    size_t internalBitDepth        = 10;
+    if ( params_.rawPointsPatch_ ) { internalBitDepth = geometryVideoBitDepth; }
+    auto&       videoBitstreamD0 = params_.multipleStreams_ ? context.createVideoBitstream( VIDEO_GEOMETRY_D0 )
+                                                            : context.createVideoBitstream( VIDEO_GEOMETRY );
+    auto&       videoGeometry    = context.getVideoGeometryMultiple()[0];
+    std::string geometryConfigFile =
+        params_.multipleStreams_
+            ? params_.geometry0Config_
+            : ( params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.geometryConfig_ ) : params_.geometryConfig_ );
+    videoEncoder.compress( videoGeometry,                             // video
+                          path.str(),                                // path
+                          params_.geometryQP_ + params_.deltaQPD0_,  // QP
+                          videoBitstreamD0,                          // bitstream
+                          geometryConfigFile,                        // config file
+                          params_.videoEncoderGeometryPath_,         // encoder path
+                          params_.videoEncoderGeometryCodecId_,      // Codec id
+                          params_.byteStreamVideoCoderGeometry_,     // byteStreamVideoCoder
+                          context,                                   // context
+                          nbyteGeo,                                  // nbyte
+                          false,                                     // use444CodecIo
+                          params_.use3dmc_,                          // use3dmv
+                          params_.usePccRDO_,                        // usePccRDO
+                          params_.shvcLayerIndex_,                   // SHVC layer index
+                          params_.shvcRateX_,                        // SHVC rate X
+                          params_.shvcRateY_,                        // SHVC rate Y
+                          internalBitDepth,                          // internalBitDepth
+                          false,                                     // useConversion
+                          params_.keepIntermediateFiles_ );          // keep intermediate
+    size_t sizeGeometryVideo = videoBitstreamD0.size();
+    std::cout << "sizeGeometryVideo: " << sizeGeometryVideo << std::endl;
+    if ( params_.multipleStreams_ ) {
+      if ( params_.lossyRawPointsPatch_ ) {
+        std::cout << "Error: lossyRawPointsPatch has not been implemented for "
+                    "absoluteD1_ = 0 as "
+                    "yet. Exiting... "
+                  << std::endl;
+        std::exit( -1 );
+      }
+      if ( !params_.absoluteD1_ ) {
+        // Form differential video geometry1
+        for ( size_t f = 0; f < frames.size(); ++f ) {
+          auto& frame1 = context.getVideoGeometryMultiple()[1].getFrame( f );
+          predictGeometryFrame( frames[f].getTitleFrameContext(), videoGeometry.getFrame( f ), frame1 );
+          dilate3DPadding( sources[f], frames[f], frames[f].getTitleFrameContext(), frame1,
+                          videoOccupancyMap.getFrame( f ) );
+        }
+      }
 
-      if ( params_.useRawPointsSeparateVideo_ ) {
-        printf( "frame(auxVideo) %zu tile %zu: (0,%zu) (%zux%zu)\n", fi, ti, context[fi].getAuxTileLeftTopY( ti ),
-                context[fi].getAuxVideoWidth(), context[fi].getAuxTileHeight( ti ) );
+      // Compress geometry1
+      TRACE_PICTURE( "Geometry\n" );
+      TRACE_PICTURE( "MapIdx = 1, AuxiliaryVideoFlag = 0\n" );
+      auto& videoGeometryD1  = context.getVideoGeometryMultiple()[1];
+      auto& videoBitstreamD1 = context.createVideoBitstream( VIDEO_GEOMETRY_D1 );
+      videoEncoder.compress( videoGeometryD1,                           // video
+                            path.str(),                                // path
+                            params_.geometryQP_ + params_.deltaQPD1_,  // QP
+                            videoBitstreamD1,                          // bitstream
+                            params_.geometry1Config_,                  // config file
+                            params_.videoEncoderGeometryPath_,         // encoder path
+                            params_.videoEncoderGeometryCodecId_,      // Codec id
+                            params_.byteStreamVideoCoderGeometry_,     // byteStreamVideoCoder
+                            context,                                   // context
+                            nbyteGeo,                                  // nbyte
+                            false,                                     // use444CodecIo
+                            params_.use3dmc_,                          // use3dmv
+                            params_.usePccRDO_,                        // usePccRDO
+                            params_.shvcLayerIndex_,                   // SHVC layer index
+                            params_.shvcRateX_,                        // SHVC rate X
+                            params_.shvcRateY_,                        // SHVC rate Y
+                            internalBitDepth,                          // internalBitDepth
+                            false,                                     // useConversion
+                            params_.keepIntermediateFiles_ );          // keep intermediate
+      size_t sizeGeometryVideoD1 = videoBitstreamD1.size();
+      std::cout << "sizeGeometryVideoD1: " << sizeGeometryVideoD1 << std::endl;
+      std::cout << "geometryVideo ->" << ( sizeGeometryVideo + sizeGeometryVideoD1 ) << "=" << sizeGeometryVideo << "+"
+                << sizeGeometryVideoD1 << " B ("
+                << ( ( sizeGeometryVideo + sizeGeometryVideoD1 ) * 8.0 ) / ( 2 * frames.size() * pointCount ) << " bpp)"
+                << std::endl;
+    }
+    auto& asps = context.getAtlasSequenceParameterSet( atlasIndex );
+    if ( asps.getRawPatchEnabledFlag() && asps.getAuxiliaryVideoEnabledFlag() ) {
+      TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 1\n" );
+      std::cout << "*******Video: Aux (Geometry) ********" << std::endl;
+      placeAuxiliaryPointsTiles( context );
+      auto& videoRawPointsGeometryBitstream = context.createVideoBitstream( VIDEO_GEOMETRY_RAW );
+      generateRawPointsGeometryVideo( context );
+      auto& videoRawPointsGeometry = context.getVideoRawPointsGeometry();
+      videoEncoder.compress( videoRawPointsGeometry,                 // video,
+                            path.str(),                             // path,
+                            params_.auxGeometryQP_,                 // qp,
+                            videoRawPointsGeometryBitstream,        // bitstream,
+                            params_.geometryAuxVideoConfig_,        // encoderConfig,
+                            params_.videoEncoderGeometryPath_,      // encoderPath,
+                            params_.videoEncoderGeometryCodecId_,   // codecId,
+                            params_.byteStreamVideoCoderGeometry_,  // byteStreamVideoCoder,
+                            context,                                // context
+                            nbyteGeoMP,                             // nbyte
+                            false,                                  // use444CodecIo
+                            false,                                  // use3dmv
+                            false,                                  // usePccRDO
+                            params_.shvcLayerIndex_,                // SHVC layer index
+                            params_.shvcRateX_,                     // SHVC rate X
+                            params_.shvcRateY_,                     // SHVC rate Y
+                            internalBitDepth,                       // internalBitDepth
+                            false,                                  // useConversion
+                            params_.keepIntermediateFiles_ );       // keepIntermediateFiles
+    }
+    // Tile summary
+    printf( "****TileInfo***Summary******************\n" );
+    fflush( stdout );
+    for ( size_t fi = 0; fi < context.size(); fi++ ) {
+      for ( size_t ti = 0; ti < context[fi].getNumTilesInAtlasFrame(); ti++ ) {
+        auto& tile = context[fi].getTile( ti );
+        printf(
+            "frame %zu tile %zu: (%zu,%zu) (%zux%zu) patchCount:%zu regPoints:%zu, rawPatch:%zu rawPoints:%zu "
+            "eomPatch:%zu eomPoints:%zu\n",
+            fi, ti, tile.getLeftTopXInFrame(), tile.getLeftTopYInFrame(), tile.getWidth(), tile.getHeight(),
+            tile.getPatches().size(), tile.getTotalNumberOfRegularPoints(), tile.getRawPointsPatches().size(),
+            tile.getRawPointsPatches().size() == 0 ? 0 : tile.getRawPointsPatch( 0 ).getNumberOfRawPoints(),
+            tile.getEomPatches().size(), tile.getEomPatches().size() == 0 ? 0 : tile.getEomPatch( 0 ).eomCount_ );
+
+        if ( params_.useRawPointsSeparateVideo_ ) {
+          printf( "frame(auxVideo) %zu tile %zu: (0,%zu) (%zux%zu)\n", fi, ti, context[fi].getAuxTileLeftTopY( ti ),
+                  context[fi].getAuxVideoWidth(), context[fi].getAuxTileHeight( ti ) );
+        }
+      }
+    }
+    printf( "*********************************************\n" );
+    fflush( stdout );
+
+
+    // RECONSTRUCT POINT CLOUD GEOMETRY
+    setGeneratePointCloudParameters( gpcParams[i], context );
+    context.allocOneLayerData();
+    auto& partitions = allPartitions[i];
+    auto& perFrameReconstructs = partialReconstructs[i];
+    perFrameReconstructs.resize(sources.getFrameCount());
+    partitions.resize( context.size() );
+    for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
+      auto& frame = context[frameIdx];
+      auto& perTileReconstructs = perFrameReconstructs[frameIdx];
+      perTileReconstructs.resize(frame.getNumTilesInAtlasFrame());
+      for ( size_t tileIdx = 0; tileIdx < frame.getNumTilesInAtlasFrame(); tileIdx++ ) {
+        auto&        tile = frame.getTile( tileIdx );
+        if ( params_.pointLocalReconstruction_ ) {
+          auto& videoGeometryMultiple = context.getVideoGeometryMultiple();
+          pointLocalReconstructionSearch( context, tile, videoGeometryMultiple, gpcParams[i]);
+        }
+        generatePointCloud( perTileReconstructs[tileIdx], context, frameIdx, tileIdx, gpcParams[i], partitions[frameIdx], false );
+        if ( frame.getNumTilesInAtlasFrame() != 1 ) {
+          frame.getTitleFrameContext().appendPointToPixel( tile.getPointToPixel() );
+        }
+        reconstructs[frameIdx].appendPointSet(perTileReconstructs[tileIdx]);
       }
     }
   }
-  printf( "*********************************************\n" );
-  fflush( stdout );
 
-  // RECONSTRUCT POINT CLOUD GEOMETRY
-  GeneratePointCloudParameters gpcParams;
-  setGeneratePointCloudParameters( gpcParams, context );
-  context.allocOneLayerData();
-  std::vector<std::vector<uint32_t>> partitions;
-  partitions.resize( context.size() );
-  for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
-    auto& frame = context[frameIdx];
-    for ( size_t tileIdx = 0; tileIdx < frame.getNumTilesInAtlasFrame(); tileIdx++ ) {
-      PCCPointSet3 tileReconstrct;
-      auto&        tile = frame.getTile( tileIdx );
-      if ( params_.pointLocalReconstruction_ ) {
-        auto& videoGeometryMultiple = context.getVideoGeometryMultiple();
-        pointLocalReconstructionSearch( context, tile, videoGeometryMultiple, gpcParams );
-      }
-      generatePointCloud( tileReconstrct, context, frameIdx, tileIdx, gpcParams, partitions[frameIdx], false );
-      reconstructs[frameIdx].appendPointSet( tileReconstrct );
-      if ( frame.getNumTilesInAtlasFrame() != 1 ) {
-        frame.getTitleFrameContext().appendPointToPixel( tile.getPointToPixel() );
-      }
-    }
-  }
+  // #3 Attribute Video Generation
+  for (size_t i = 0; i < contexts.size(); ++i) {
+    auto& context = contexts[i];
+    size_t            atlasIndex = context.getAtlasIndex();
+    auto&             frames     = context.getFrames();
+    auto&             sps        = context.getVps();
+    auto&             asps       = context.getAtlasSequenceParameterSet( atlasIndex );
+    auto&             path       = paths[i];
+    auto&             partitions = allPartitions[i];
 
-  auto& ai = sps.getAttributeInformation( atlasIndex );
-  if ( ai.getAttributeCount() > 0 ) {
-    std::cout << "Attribute Coding starts" << std::endl;
-    const size_t mapCount = params_.mapCountMinus1_ + 1;
-    // GENERATE ATTRIBUTE
-    generateAttributeVideo( sources, reconstructs, context, params_ );
-    if ( params_.attributeBGFill_ < 3 ) {
-      // ATTRIBUTE IMAGE PADDING
-      tbb::task_arena limited( static_cast<int>( params_.nbThread_ ) );
-      limited.execute( [&] {
-        tbb::parallel_for( size_t( 0 ), frames.size(), [&]( const size_t f ) {
-          using namespace std::chrono;
-          pcc::chrono::Stopwatch<std::chrono::steady_clock> clockPadding;
-          clockPadding.start();
-          if ( params_.absoluteT1_ ) {
-            switch ( params_.attributeBGFill_ ) {
-              case 0:
-                for ( int mapIdx = 0; mapIdx < mapCount; mapIdx++ ) {
-                  size_t videoFrameIdx  = params_.multipleStreams_ ? f : ( f * mapCount + mapIdx );
-                  auto&  videoAttribute = context.getVideoAttributesMultiple()[params_.multipleStreams_ ? mapIdx : 0];
-                  dilate( frames[f].getTitleFrameContext(), videoAttribute.getFrame( videoFrameIdx ) );
-                }
-                break;
-              case 1:
-                for ( int mapIdx = 0; mapIdx < mapCount; mapIdx++ ) {
-                  size_t videoFrameIdx  = params_.multipleStreams_ ? f : ( f * mapCount + mapIdx );
-                  auto&  videoAttribute = context.getVideoAttributesMultiple()[params_.multipleStreams_ ? mapIdx : 0];
-                  dilateSmoothedPushPull( frames[f].getTitleFrameContext(), videoAttribute.getFrame( videoFrameIdx ) );
-                }
-                break;
-              case 2:
-                for ( int mapIdx = 0; mapIdx < mapCount; mapIdx++ ) {
-                  size_t videoFrameIdx  = params_.multipleStreams_ ? f : ( f * mapCount + mapIdx );
-                  auto&  videoAttribute = context.getVideoAttributesMultiple()[params_.multipleStreams_ ? mapIdx : 0];
-                  dilateHarmonicBackgroundFill( frames[f].getTitleFrameContext(),
-                                                videoAttribute.getFrame( videoFrameIdx ) );
-                }
-                break;
-              default: std::cout << "Warning: no attribute padding applied!" << std::endl;
-            }  // switch
-            if ( mapCount > 1 && !params_.multipleStreams_ && params_.groupDilation_ ) {
-              // Group dilation in attribute
-              auto& frame        = frames[f].getTitleFrameContext();
-              auto& occupancyMap = frame.getOccupancyMap();
-              auto& width        = frame.getWidth();
-              auto& height       = frame.getHeight();
-              auto& frame1       = context.getVideoAttributesMultiple()[0].getFrame( f * mapCount );
-              auto& frame2       = context.getVideoAttributesMultiple()[0].getFrame( f * mapCount + 1 );
-              for ( size_t y = 0; y < height; y++ ) {
-                for ( size_t x = 0; x < width; x++ ) {
-                  const size_t pos = y * width + x;
-                  if ( occupancyMap[pos] == 0 ) {
-                    for ( size_t c = 0; c < 3; c++ ) {
-                      uint8_t  d0  = frame1.getValue( c, x, y );
-                      uint8_t  d1  = frame2.getValue( c, x, y );
-                      uint32_t avg = ( static_cast<uint32_t>( d0 ) + static_cast<uint32_t>( d1 ) + 1 ) >> 1;
-                      frame1.setValue( c, x, y, static_cast<uint8_t>( avg ) );
-                      frame2.setValue( c, x, y, static_cast<uint8_t>( avg ) );
+    auto& ai = sps.getAttributeInformation( atlasIndex );
+    if ( ai.getAttributeCount() > 0 ) {
+      std::cout << "Attribute Coding starts" << std::endl;
+      const size_t mapCount = params_.mapCountMinus1_ + 1;
+      // GENERATE ATTRIBUTE
+      generateAttributeVideo( sources, reconstructs, context, params_ );
+      if ( params_.attributeBGFill_ < 3 ) {
+        // ATTRIBUTE IMAGE PADDING
+        tbb::task_arena limited( static_cast<int>( params_.nbThread_ ) );
+        limited.execute( [&] {
+          tbb::parallel_for( size_t( 0 ), frames.size(), [&]( const size_t f ) {
+            using namespace std::chrono;
+            pcc::chrono::Stopwatch<std::chrono::steady_clock> clockPadding;
+            clockPadding.start();
+            if ( params_.absoluteT1_ ) {
+              switch ( params_.attributeBGFill_ ) {
+                case 0:
+                  for ( int mapIdx = 0; mapIdx < mapCount; mapIdx++ ) {
+                    size_t videoFrameIdx  = params_.multipleStreams_ ? f : ( f * mapCount + mapIdx );
+                    auto&  videoAttribute = context.getVideoAttributesMultiple()[params_.multipleStreams_ ? mapIdx : 0];
+                    dilate( frames[f].getTitleFrameContext(), videoAttribute.getFrame( videoFrameIdx ) );
+                  }
+                  break;
+                case 1:
+                  for ( int mapIdx = 0; mapIdx < mapCount; mapIdx++ ) {
+                    size_t videoFrameIdx  = params_.multipleStreams_ ? f : ( f * mapCount + mapIdx );
+                    auto&  videoAttribute = context.getVideoAttributesMultiple()[params_.multipleStreams_ ? mapIdx : 0];
+                    dilateSmoothedPushPull( frames[f].getTitleFrameContext(), videoAttribute.getFrame( videoFrameIdx ) );
+                  }
+                  break;
+                case 2:
+                  for ( int mapIdx = 0; mapIdx < mapCount; mapIdx++ ) {
+                    size_t videoFrameIdx  = params_.multipleStreams_ ? f : ( f * mapCount + mapIdx );
+                    auto&  videoAttribute = context.getVideoAttributesMultiple()[params_.multipleStreams_ ? mapIdx : 0];
+                    dilateHarmonicBackgroundFill( frames[f].getTitleFrameContext(),
+                                                  videoAttribute.getFrame( videoFrameIdx ) );
+                  }
+                  break;
+                default: std::cout << "Warning: no attribute padding applied!" << std::endl;
+              }  // switch
+              if ( mapCount > 1 && !params_.multipleStreams_ && params_.groupDilation_ ) {
+                // Group dilation in attribute
+                auto& frame        = frames[f].getTitleFrameContext();
+                auto& occupancyMap = frame.getOccupancyMap();
+                auto& width        = frame.getWidth();
+                auto& height       = frame.getHeight();
+                auto& frame1       = context.getVideoAttributesMultiple()[0].getFrame( f * mapCount );
+                auto& frame2       = context.getVideoAttributesMultiple()[0].getFrame( f * mapCount + 1 );
+                for ( size_t y = 0; y < height; y++ ) {
+                  for ( size_t x = 0; x < width; x++ ) {
+                    const size_t pos = y * width + x;
+                    if ( occupancyMap[pos] == 0 ) {
+                      for ( size_t c = 0; c < 3; c++ ) {
+                        uint8_t  d0  = frame1.getValue( c, x, y );
+                        uint8_t  d1  = frame2.getValue( c, x, y );
+                        uint32_t avg = ( static_cast<uint32_t>( d0 ) + static_cast<uint32_t>( d1 ) + 1 ) >> 1;
+                        frame1.setValue( c, x, y, static_cast<uint8_t>( avg ) );
+                        frame2.setValue( c, x, y, static_cast<uint8_t>( avg ) );
+                      }
                     }
                   }
                 }
               }
+            }  // absoluteT1
+            else if ( params_.multipleStreams_ ) {
+              auto& frame = context.getVideoAttributesMultiple()[0].getFrame( f );
+              switch ( params_.attributeBGFill_ ) {
+                case 0: dilate( frames[f].getTitleFrameContext(), frame ); break;
+                case 1: dilateSmoothedPushPull( frames[f].getTitleFrameContext(), frame ); break;
+                case 2: dilateHarmonicBackgroundFill( frames[f].getTitleFrameContext(), frame ); break;
+                default: std::cout << "Warning: no attribute padding applied!" << std::endl;
+              }
             }
-          }  // absoluteT1
-          else if ( params_.multipleStreams_ ) {
-            auto& frame = context.getVideoAttributesMultiple()[0].getFrame( f );
+            clockPadding.stop();
+            using ms              = milliseconds;
+            auto totalPaddingTime = duration_cast<ms>( clockPadding.count() ).count();
+            std::cout << "Processing time (Padding [T0T1]" << f << "/" << frames.size()
+                      << "): " << totalPaddingTime / 1000.0 << " s\n";
+          } );
+        } );
+      }
+      // ENCODE ATTRIBUTE IMAGE
+      TRACE_PICTURE( "Attribute\n" );
+      std::cout << "attribute video " << std::endl;
+      auto&        videoBitstream = params_.multipleStreams_ ? context.createVideoBitstream( VIDEO_ATTRIBUTE_T0 )
+                                                            : context.createVideoBitstream( VIDEO_ATTRIBUTE );
+      const size_t nbyteAtt       = 1;
+      int attrPartitionIndex      = sps.getAttributeInformation( atlasIndex ).getAttributeDimensionPartitionsMinus1( 0 );
+      int attrTypeId              = sps.getAttributeInformation( atlasIndex ).getAttributeTypeId( 0 );
+      TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0, AttrIdx = 0, AttrPartIdx = %d, AttrTypeID = %d\n",
+                    attrPartitionIndex, attrTypeId );
+      auto encoderConfig0 = params_.multipleStreams_
+                                ? ( params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.attributeConfig_ )
+                                                                : params_.attribute0Config_ )
+                                : ( params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.attributeConfig_ )
+                                                                : params_.attributeConfig_ );
+      videoEncoder.compress( context.getVideoAttributesMultiple()[0],     // video,
+                            path.str(),                                  // path
+                            params_.attributeQP_ + params_.deltaQPT0_,   // qp
+                            videoBitstream,                              // bitstream
+                            encoderConfig0,                              // encoderConfig
+                            params_.videoEncoderAttributePath_,          // encoderPath
+                            params_.videoEncoderAttributeCodecId_,       // codecId
+                            params_.byteStreamVideoCoderAttribute_,      // byteStreamVideoCoder
+                            context,                                     // context
+                            nbyteAtt,                                    // nbyte
+                            params_.attributeVideo444_,                  // use444CodecIo
+                            params_.use3dmc_,                            // use3dmv
+                            params_.usePccRDO_,                          // usePccRDO
+                            params_.shvcLayerIndex_,                     // SHVC layer index
+                            params_.shvcRateX_,                          // SHVC rate X
+                            params_.shvcRateY_,                          // SHVC rate Y
+                            params_.rawPointsPatch_ ? 8 : 10,            // internalBitDepth
+                            !params_.rawPointsPatch_,                    // useConversion
+                            params_.keepIntermediateFiles_,              // keepIntermediateFiles
+                            params_.colorSpaceConversionConfig_,         // colorSpaceConversionConfig
+                            params_.inverseColorSpaceConversionConfig_,  // inverseColorSpaceConversionConfig
+                            params_.colorSpaceConversionPath_ );         // colorSpaceConversionPath
+
+      auto sizeAttributeVideo = videoBitstream.size();
+      std::cout << "attribute video ->" << sizeAttributeVideo << " B ("
+                << ( sizeAttributeVideo * 8.0 ) / ( 2 * frames.size() * pointCount ) << " bpp)" << std::endl;
+
+      if ( params_.multipleStreams_ ) {
+        // Form differential video attribute1
+        if ( !params_.absoluteT1_ ) {
+          for ( size_t f = 0; f < frames.size(); ++f ) {
+            auto& frame0 = context.getVideoAttributesMultiple()[0].getFrame( f );
+            auto& frame1 = context.getVideoAttributesMultiple()[1].getFrame( f );
+            predictAttributeFrame( frames[f].getTitleFrameContext(), frame0, frame1 );
             switch ( params_.attributeBGFill_ ) {
-              case 0: dilate( frames[f].getTitleFrameContext(), frame ); break;
-              case 1: dilateSmoothedPushPull( frames[f].getTitleFrameContext(), frame ); break;
-              case 2: dilateHarmonicBackgroundFill( frames[f].getTitleFrameContext(), frame ); break;
+              case 0: dilate( frames[f].getTitleFrameContext(), frame1 ); break;
+              case 1: dilateSmoothedPushPull( frames[f].getTitleFrameContext(), frame1 ); break;
+              case 2: dilateHarmonicBackgroundFill( frames[f].getTitleFrameContext(), frame1 ); break;
               default: std::cout << "Warning: no attribute padding applied!" << std::endl;
             }
           }
-          clockPadding.stop();
-          using ms              = milliseconds;
-          auto totalPaddingTime = duration_cast<ms>( clockPadding.count() ).count();
-          std::cout << "Processing time (Padding [T0T1]" << f << "/" << frames.size()
-                    << "): " << totalPaddingTime / 1000.0 << " s\n";
-        } );
-      } );
-    }
-    // ENCODE ATTRIBUTE IMAGE
-    TRACE_PICTURE( "Attribute\n" );
-    std::cout << "attribute video " << std::endl;
-    auto&        videoBitstream = params_.multipleStreams_ ? context.createVideoBitstream( VIDEO_ATTRIBUTE_T0 )
-                                                           : context.createVideoBitstream( VIDEO_ATTRIBUTE );
-    const size_t nbyteAtt       = 1;
-    int attrPartitionIndex      = sps.getAttributeInformation( atlasIndex ).getAttributeDimensionPartitionsMinus1( 0 );
-    int attrTypeId              = sps.getAttributeInformation( atlasIndex ).getAttributeTypeId( 0 );
-    TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0, AttrIdx = 0, AttrPartIdx = %d, AttrTypeID = %d\n",
-                   attrPartitionIndex, attrTypeId );
-    auto encoderConfig0 = params_.multipleStreams_
-                              ? ( params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.attributeConfig_ )
-                                                               : params_.attribute0Config_ )
-                              : ( params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.attributeConfig_ )
-                                                               : params_.attributeConfig_ );
-    videoEncoder.compress( context.getVideoAttributesMultiple()[0],     // video,
-                           path.str(),                                  // path
-                           params_.attributeQP_ + params_.deltaQPT0_,   // qp
-                           videoBitstream,                              // bitstream
-                           encoderConfig0,                              // encoderConfig
-                           params_.videoEncoderAttributePath_,          // encoderPath
-                           params_.videoEncoderAttributeCodecId_,       // codecId
-                           params_.byteStreamVideoCoderAttribute_,      // byteStreamVideoCoder
-                           context,                                     // context
-                           nbyteAtt,                                    // nbyte
-                           params_.attributeVideo444_,                  // use444CodecIo
-                           params_.use3dmc_,                            // use3dmv
-                           params_.usePccRDO_,                          // usePccRDO
-                           params_.shvcLayerIndex_,                     // SHVC layer index
-                           params_.shvcRateX_,                          // SHVC rate X
-                           params_.shvcRateY_,                          // SHVC rate Y
-                           params_.rawPointsPatch_ ? 8 : 10,            // internalBitDepth
-                           !params_.rawPointsPatch_,                    // useConversion
-                           params_.keepIntermediateFiles_,              // keepIntermediateFiles
-                           params_.colorSpaceConversionConfig_,         // colorSpaceConversionConfig
-                           params_.inverseColorSpaceConversionConfig_,  // inverseColorSpaceConversionConfig
-                           params_.colorSpaceConversionPath_ );         // colorSpaceConversionPath
-
-    auto sizeAttributeVideo = videoBitstream.size();
-    std::cout << "attribute video ->" << sizeAttributeVideo << " B ("
-              << ( sizeAttributeVideo * 8.0 ) / ( 2 * frames.size() * pointCount ) << " bpp)" << std::endl;
-
-    if ( params_.multipleStreams_ ) {
-      // Form differential video attribute1
-      if ( !params_.absoluteT1_ ) {
-        for ( size_t f = 0; f < frames.size(); ++f ) {
-          auto& frame0 = context.getVideoAttributesMultiple()[0].getFrame( f );
-          auto& frame1 = context.getVideoAttributesMultiple()[1].getFrame( f );
-          predictAttributeFrame( frames[f].getTitleFrameContext(), frame0, frame1 );
-          switch ( params_.attributeBGFill_ ) {
-            case 0: dilate( frames[f].getTitleFrameContext(), frame1 ); break;
-            case 1: dilateSmoothedPushPull( frames[f].getTitleFrameContext(), frame1 ); break;
-            case 2: dilateHarmonicBackgroundFill( frames[f].getTitleFrameContext(), frame1 ); break;
-            default: std::cout << "Warning: no attribute padding applied!" << std::endl;
-          }
+          std::cout << "attribute prediction done " << std::endl;
         }
-        std::cout << "attribute prediction done " << std::endl;
+
+        // compress attribute1
+        TRACE_PICTURE( "Attribute\n" );
+        TRACE_PICTURE( "AttrIdx = 0, AttrPartIdx = %d, AttrTypeID = %d, MapIdx = 1, AuxiliaryVideoFlag = 0\n",
+                      attrPartitionIndex, attrTypeId );
+        auto& videoBitstreamT1 = context.createVideoBitstream( VIDEO_ATTRIBUTE_T1 );
+        auto  encoderConfig1 =
+            params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.attributeConfig_ ) : params_.attribute1Config_;
+        videoEncoder.compress( context.getVideoAttributesMultiple()[1],     // video,
+                              path.str(),                                  // path
+                              params_.attributeQP_ + params_.deltaQPT1_,   // qp
+                              videoBitstreamT1,                            // bitstream
+                              encoderConfig1,                              // encoderConfig
+                              params_.videoEncoderAttributePath_,          // encoderPath
+                              params_.videoEncoderAttributeCodecId_,       // codecId
+                              params_.byteStreamVideoCoderAttribute_,      // byteStreamVideoCoder
+                              context,                                     // context
+                              nbyteAtt,                                    // nbyte
+                              params_.attributeVideo444_,                  // use444CodecIo
+                              params_.use3dmc_,                            // use3dmv
+                              params_.usePccRDO_,                          // usePccRDO
+                              params_.shvcLayerIndex_,                     // SHVC layer index
+                              params_.shvcRateX_,                          // SHVC rate X
+                              params_.shvcRateY_,                          // SHVC rate Y
+                              params_.rawPointsPatch_ ? 8 : 10,            // internalBitDepth
+                              !params_.rawPointsPatch_,                    // useConversion
+                              params_.keepIntermediateFiles_,              // keepIntermediateFiles
+                              params_.colorSpaceConversionConfig_,         // colorSpaceConversionConfig
+                              params_.inverseColorSpaceConversionConfig_,  // inverseColorSpaceConversionConfig
+                              params_.colorSpaceConversionPath_ );         // keepIntermediateFiles
+        size_t sizeAttributeVideoT1 = videoBitstreamT1.size();
+        std::cout << "attribute video ->" << ( sizeAttributeVideo + sizeAttributeVideoT1 ) << "=" << sizeAttributeVideo
+                  << "+" << sizeAttributeVideoT1 << " B ("
+                  << ( ( sizeAttributeVideo + sizeAttributeVideoT1 ) * 8.0 ) / ( 2 * frames.size() * pointCount )
+                  << " bpp)" << std::endl;
       }
 
-      // compress attribute1
-      TRACE_PICTURE( "Attribute\n" );
-      TRACE_PICTURE( "AttrIdx = 0, AttrPartIdx = %d, AttrTypeID = %d, MapIdx = 1, AuxiliaryVideoFlag = 0\n",
-                     attrPartitionIndex, attrTypeId );
-      auto& videoBitstreamT1 = context.createVideoBitstream( VIDEO_ATTRIBUTE_T1 );
-      auto  encoderConfig1 =
-          params_.mapCountMinus1_ == 0 ? getEncoderConfig1L( params_.attributeConfig_ ) : params_.attribute1Config_;
-      videoEncoder.compress( context.getVideoAttributesMultiple()[1],     // video,
-                             path.str(),                                  // path
-                             params_.attributeQP_ + params_.deltaQPT1_,   // qp
-                             videoBitstreamT1,                            // bitstream
-                             encoderConfig1,                              // encoderConfig
-                             params_.videoEncoderAttributePath_,          // encoderPath
-                             params_.videoEncoderAttributeCodecId_,       // codecId
-                             params_.byteStreamVideoCoderAttribute_,      // byteStreamVideoCoder
-                             context,                                     // context
-                             nbyteAtt,                                    // nbyte
-                             params_.attributeVideo444_,                  // use444CodecIo
-                             params_.use3dmc_,                            // use3dmv
-                             params_.usePccRDO_,                          // usePccRDO
-                             params_.shvcLayerIndex_,                     // SHVC layer index
-                             params_.shvcRateX_,                          // SHVC rate X
-                             params_.shvcRateY_,                          // SHVC rate Y
-                             params_.rawPointsPatch_ ? 8 : 10,            // internalBitDepth
-                             !params_.rawPointsPatch_,                    // useConversion
-                             params_.keepIntermediateFiles_,              // keepIntermediateFiles
-                             params_.colorSpaceConversionConfig_,         // colorSpaceConversionConfig
-                             params_.inverseColorSpaceConversionConfig_,  // inverseColorSpaceConversionConfig
-                             params_.colorSpaceConversionPath_ );         // keepIntermediateFiles
-      size_t sizeAttributeVideoT1 = videoBitstreamT1.size();
-      std::cout << "attribute video ->" << ( sizeAttributeVideo + sizeAttributeVideoT1 ) << "=" << sizeAttributeVideo
-                << "+" << sizeAttributeVideoT1 << " B ("
-                << ( ( sizeAttributeVideo + sizeAttributeVideoT1 ) * 8.0 ) / ( 2 * frames.size() * pointCount )
-                << " bpp)" << std::endl;
-    }
-
-    if ( asps.getRawPatchEnabledFlag() && asps.getAuxiliaryVideoEnabledFlag() ) {
-      TRACE_PICTURE( "Attribute\n" );
-      TRACE_PICTURE( "AttrIdx = 0, AttrPartIdx = %d, AttrTypeID = %d, MapIdx = 0, AuxiliaryVideoFlag = 1\n",
-                     attrPartitionIndex, attrTypeId );
-      std::cout << "*******Video: Aux (Attribute) ********" << std::endl;
-      auto& videoBitstreamMP = context.createVideoBitstream( VIDEO_ATTRIBUTE_RAW );
-      generateRawPointsAttributeVideo( context );
-      auto&        videoRawPointsAttribute = context.getVideoRawPointsAttribute();
-      const size_t nByteAttMP              = 1;
-      videoEncoder.compress( videoRawPointsAttribute,                     // video,
-                             path.str(),                                  // path
-                             params_.auxAttributeQP_,                     // qp
-                             videoBitstreamMP,                            // bitstream
-                             params_.attributeAuxVideoConfig_,            // encoderConfig
-                             params_.videoEncoderAttributePath_,          // encoderPath
-                             params_.videoEncoderAttributeCodecId_,       // codecId
-                             params_.byteStreamVideoCoderAttribute_,      // byteStreamVideoCoder
-                             context,                                     // context
-                             nByteAttMP,                                  // nbyte
-                             params_.attributeVideo444_,                  // use444CodecIo
-                             false,                                       // use3dmv
-                             false,                                       // usePccRDO
-                             params_.shvcLayerIndex_,                     // SHVC layer index
-                             params_.shvcRateX_,                          // SHVC rate X
-                             params_.shvcRateY_,                          // SHVC rate Y
-                             10,                                          // internalBitDepth
-                             !params_.rawPointsPatch_,                    // useConversion
-                             params_.keepIntermediateFiles_,              // keepIntermediateFiles
-                             params_.colorSpaceConversionConfig_,         // colorSpaceConversionConfig
-                             params_.inverseColorSpaceConversionConfig_,  // inverseColorSpaceConversionConfig
-                             params_.colorSpaceConversionPath_ );         // colorSpaceConversionPath
-      printf( "generateRawPointsAttributefromVideo \n" );
-      for ( size_t fi = 0; fi < context.size(); fi++ ) { generateRawPointsAttributefromVideo( context, fi ); }
-    }
-  }  // attribute
-
-  if ( params_.flagGeometrySmoothing_ ) {
-    if ( params_.pbfEnableFlag_ ) {
-      gpcParams.pbfEnableFlag_    = true;
-      gpcParams.pbfFilterSize_    = params_.pbfFilterSize_;
-      gpcParams.pbfPassesCount_   = params_.pbfPassesCount_;
-      gpcParams.pbfLog2Threshold_ = params_.pbfLog2Threshold_;
-      for ( auto& reconstruct : reconstructs ) { reconstruct.clear(); }
-      for ( auto& partition : partitions ) { partition.clear(); }
-      partitions.clear();
-      partitions.resize( context.size() );
-      for ( size_t fi = 0; fi < context.size(); fi++ ) {
-        for ( size_t ti = 0; ti < context[fi].getNumTilesInAtlasFrame(); ti++ ) {
-          generatePointCloud( reconstructs[fi], context, fi, ti, gpcParams, partitions[fi], false );
-        }
+      if ( asps.getRawPatchEnabledFlag() && asps.getAuxiliaryVideoEnabledFlag() ) {
+        TRACE_PICTURE( "Attribute\n" );
+        TRACE_PICTURE( "AttrIdx = 0, AttrPartIdx = %d, AttrTypeID = %d, MapIdx = 0, AuxiliaryVideoFlag = 1\n",
+                      attrPartitionIndex, attrTypeId );
+        std::cout << "*******Video: Aux (Attribute) ********" << std::endl;
+        auto& videoBitstreamMP = context.createVideoBitstream( VIDEO_ATTRIBUTE_RAW );
+        generateRawPointsAttributeVideo( context );
+        auto&        videoRawPointsAttribute = context.getVideoRawPointsAttribute();
+        const size_t nByteAttMP              = 1;
+        videoEncoder.compress( videoRawPointsAttribute,                     // video,
+                              path.str(),                                  // path
+                              params_.auxAttributeQP_,                     // qp
+                              videoBitstreamMP,                            // bitstream
+                              params_.attributeAuxVideoConfig_,            // encoderConfig
+                              params_.videoEncoderAttributePath_,          // encoderPath
+                              params_.videoEncoderAttributeCodecId_,       // codecId
+                              params_.byteStreamVideoCoderAttribute_,      // byteStreamVideoCoder
+                              context,                                     // context
+                              nByteAttMP,                                  // nbyte
+                              params_.attributeVideo444_,                  // use444CodecIo
+                              false,                                       // use3dmv
+                              false,                                       // usePccRDO
+                              params_.shvcLayerIndex_,                     // SHVC layer index
+                              params_.shvcRateX_,                          // SHVC rate X
+                              params_.shvcRateY_,                          // SHVC rate Y
+                              10,                                          // internalBitDepth
+                              !params_.rawPointsPatch_,                    // useConversion
+                              params_.keepIntermediateFiles_,              // keepIntermediateFiles
+                              params_.colorSpaceConversionConfig_,         // colorSpaceConversionConfig
+                              params_.inverseColorSpaceConversionConfig_,  // inverseColorSpaceConversionConfig
+                              params_.colorSpaceConversionPath_ );         // colorSpaceConversionPath
+        printf( "generateRawPointsAttributefromVideo \n" );
+        for ( size_t fi = 0; fi < context.size(); fi++ ) { generateRawPointsAttributefromVideo( context, fi ); }
       }
-    }
+    }  // attribute
   }
 
-  if ( ai.getAttributeCount() > 0 ) {
-    // RECOLOR RECONSTRUCTED POINT CLOUD
-    std::cout << "Color Point Clouds" << std::endl;
-    std::vector<std::vector<bool>> absoluteT1List;
-    absoluteT1List.resize( ai.getAttributeCount() );
-    for ( int attrIdx = 0; attrIdx < ai.getAttributeCount(); ++attrIdx ) {
-      for ( uint32_t mapIdx = 0; mapIdx < sps.getMapCountMinus1( atlasIndex ) + 1; ++mapIdx ) {
-        absoluteT1List[attrIdx].push_back( params_.absoluteT1_ );
+  // #Reconstruction of the Point Cloud
+
+  for ( auto& reconstruct : reconstructs ) { reconstruct.clear(); }
+  for (size_t i = 0; i < contexts.size(); ++i) {
+    auto&             context    = contexts[i];
+    auto&             partitions = allPartitions[i];
+    size_t            atlasIndex = context.getAtlasIndex();
+    auto&             sps        = context.getVps();
+    auto&             ai         = sps.getAttributeInformation( atlasIndex );
+    auto&             perFrameReconstructs = partialReconstructs[i];
+
+    PCCGroupOfFrames localReconstructs;
+    localReconstructs.setFrameCount(context.size());
+    if ( params_.flagGeometrySmoothing_ ) {
+      if ( params_.pbfEnableFlag_ ) {
+        gpcParams[i].pbfEnableFlag_    = true;
+        gpcParams[i].pbfFilterSize_    = params_.pbfFilterSize_;
+        gpcParams[i].pbfPassesCount_   = params_.pbfPassesCount_;
+        gpcParams[i].pbfLog2Threshold_ = params_.pbfLog2Threshold_;
+        for ( auto& partition : partitions ) { partition.clear(); }
+        //for ( auto& reconstruct : localReconstructs ) { reconstruct.clear(); } //Resetting deeper for perFrameReconstructs
+        partitions.clear();
+        partitions.resize( context.size() );
+        for ( size_t fi = 0; fi < context.size(); fi++ ) {
+          for ( size_t ti = 0; ti < context[fi].getNumTilesInAtlasFrame(); ti++ ) {
+            generatePointCloud( localReconstructs[fi], context, fi, ti, gpcParams[i], partitions[fi], false );
+          }
+        }
       }
     }
     for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
-      reconstructs[frameIdx].addColors();
-      reconstructs[frameIdx].addColors16bit();
-      size_t accTilePointCount = 0;
-      for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
-        auto& tile = context[frameIdx].getTile( tileIdx );
-        for ( size_t attIdx = 0; attIdx < 1; attIdx++ ) {
-          size_t updatedPointCount = colorPointCloud( reconstructs[frameIdx], context, tile, absoluteT1List[attIdx],
-                                                      sps.getMultipleMapStreamsPresentFlag( 0 ), ai.getAttributeCount(),
-                                                      accTilePointCount, gpcParams );
-          accTilePointCount        = updatedPointCount;
-        }
-      }  // tile
+        reconstructs[frameIdx].appendPointSet( localReconstructs[frameIdx] );
     }
-  }  // if ( ai.getAttributeCount() > 0 )
-
-#ifdef CONFORMANCE_TRACE
-  for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
-    size_t numProjPoints = 0, numRawPoints = 0, numEomPoints = 0;
-    for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
-      auto& tile = context[frameIdx].getTile( tileIdx );
-      numProjPoints += tile.getTotalNumberOfRegularPoints();
-      numEomPoints += tile.getTotalNumberOfEOMPoints();
-      numRawPoints += tile.getTotalNumberOfRawPoints();
-    }  // tile
-    if ( ai.getAttributeCount() == 0 ) {
-      reconstructs[frameIdx].removeColors();
-      reconstructs[frameIdx].removeColors16bit();
-    } else {
-      bool isAttributes444 = static_cast<int>( params_.rawPointsPatch_ ) == 1;
-      if ( !isAttributes444 ) {  // lossy: convert 16-bit yuv444 to 8-bit RGB444
-        reconstructs[frameIdx].convertYUV16ToRGB8();
-      } else {
-        reconstructs[frameIdx].copyRGB16ToRGB8();
-      }
-    }
-    TRACE_PCFRAME( "AtlasFrameIndex = %d\n", frameIdx );
-    TRACE_PCFRAME( "PointCloudFrameOrderCntVal = %d, NumProjPoints = %zu, NumRawPoints = %zu, NumEomPoints = %zu,",
-                   frameIdx, numProjPoints, numRawPoints, numEomPoints );
-    auto checksum = reconstructs[frameIdx].computeChecksum( true );
-    TRACE_PCFRAME( " MD5 checksum = " );
-    for ( auto& c : checksum ) { TRACE_PCFRAME( "%02x", c ); }
-    TRACE_PCFRAME( "\n" );
   }
-#endif
-  std::cout << "Post Processing Point Clouds" << std::endl;
-  bool isAttributes444 = static_cast<int>( params_.rawPointsPatch_ ) == 1;
-  for ( size_t frameIdx = 0; frameIdx < sources.getFrameCount(); frameIdx++ ) {
-    GeneratePointCloudParameters ppSEIParams;
-    setPostProcessingSeiParameters( ppSEIParams, context );
-    auto& reconstruct = reconstructs[frameIdx];
-    auto& partition   = partitions[frameIdx];
-    printf(
-        "Post-Processing: attributeTransfer_ = %zu flagGeometrySmoothing_ = %d flagColorSmoothing_ = %d pbfEnableFlag "
-        "= %d \n",
-        params_.attrTransferFilterType_, ppSEIParams.flagGeometrySmoothing_, ppSEIParams.flagColorSmoothing_,
-        params_.pbfEnableFlag_ );
-    TRACE_PATCH(
-        "Post-Processing: attributeTransfer_ = %zu flagGeometrySmoothing_ = %d flagColorSmoothing_ = %d pbfEnableFlag "
-        "= %d \n",
-        params_.attrTransferFilterType_, ppSEIParams.flagGeometrySmoothing_, ppSEIParams.flagColorSmoothing_,
-        params_.pbfEnableFlag_ );
 
-    if ( params_.applyGeoSmoothingType_ != 0 && ppSEIParams.flagGeometrySmoothing_ ) {
-      PCCPointSet3 tempFrameBuffer = reconstruct;
-      if ( ppSEIParams.gridSmoothing_ ) {
-        smoothPointCloudPostprocess( reconstruct, params_.colorTransform_, ppSEIParams, partition );
-      }
-      if ( ai.getAttributeCount() > 0 ) {
-        if ( !ppSEIParams.pbfEnableFlag_ ) {
-          // These are different attribute transfer functions
-          if ( params_.attrTransferFilterType_ == 1 || params_.attrTransferFilterType_ == 5 ) {
-            TRACE_PATCH( " transferColors16bitBP \n" );
-            tempFrameBuffer.transferColors16bitBP( reconstruct,                      // target
-                                                   params_.attrTransferFilterType_,  // filterType
-                                                   int32_t( 0 ),                     // searchRange
-                                                   isAttributes444,                  // losslessAttribute
-                                                   8,                                // numNeighborsColorTransferFwd
-                                                   1,                                // numNeighborsColorTransferBwd
-                                                   true,                             // useDistWeightedAverageFwd
-                                                   true,                             // useDistWeightedAverageBwd
-                                                   true,          // skipAvgIfIdenticalSourcePointPresentFwd
-                                                   false,         // skipAvgIfIdenticalSourcePointPresentBwd
-                                                   4,             // distOffsetFwd
-                                                   4,             // distOffsetBwd
-                                                   1000,          // maxGeometryDist2Fwd
-                                                   1000,          // maxGeometryDist2Bwd
-                                                   1000 * 256,    // maxColorDist2Fwd
-                                                   1000 * 256 );  // maxColorDist2Bwd
-          } else if ( params_.attrTransferFilterType_ == 2 ) {
-            TRACE_PATCH( " transferColorWeight \n" );
-            tempFrameBuffer.transferColorWeight( reconstruct, 0.1 );
-          } else if ( params_.attrTransferFilterType_ == 3 ) {
-            TRACE_PATCH( " transferColorsFilter3 \n" );
-            tempFrameBuffer.transferColorsFilter3( reconstruct, int32_t( 0 ), isAttributes444 );
-          } else if ( params_.attrTransferFilterType_ == 7 || params_.attrTransferFilterType_ == 9 ) {
-            TRACE_PATCH( " transferColorsFilter3 \n" );
-            tempFrameBuffer.transferColorsBackward16bitBP( reconstruct,                      //  target
-                                                           params_.attrTransferFilterType_,  //  filterType
-                                                           int32_t( 0 ),                     //  searchRange
-                                                           isAttributes444,                  //  losslessAttribute
-                                                           8,             //  numNeighborsColorTransferFwd
-                                                           1,             //  numNeighborsColorTransferBwd
-                                                           true,          //  useDistWeightedAverageFwd
-                                                           true,          //  useDistWeightedAverageBwd
-                                                           true,          //  skipAvgIfIdenticalSourcePointPresentFwd
-                                                           false,         //  skipAvgIfIdenticalSourcePointPresentBwd
-                                                           4,             //  distOffsetFwd
-                                                           4,             //  distOffsetBwd
-                                                           1000,          //  maxGeometryDist2Fwd
-                                                           1000,          //  maxGeometryDist2Bwd
-                                                           1000 * 256,    //  maxColorDist2Fwd
-                                                           1000 * 256 );  //  maxColorDist2Bwd
-          }
-        }
-      }  // if ( ai.getAttributeCount() > 0 )
-    }
+  for (size_t i = 0; i < contexts.size(); ++i) {
+    auto&             context    = contexts[i];
+    auto&             partitions = allPartitions[i];
+    size_t            atlasIndex = context.getAtlasIndex();
+    auto&             sps        = context.getVps();
+    auto&             ai         = sps.getAttributeInformation( atlasIndex );
+    // RECOLOR RECONSTRUCTED POINT CLOUD
     if ( ai.getAttributeCount() > 0 ) {
-      if ( params_.applyAttrSmoothingType_ != 0 && ppSEIParams.flagColorSmoothing_ ) {
-        TRACE_PATCH( " colorSmoothing \n" );
-        colorSmoothing( reconstruct, params_.colorTransform_, ppSEIParams );
+      std::cout << "Color Point Clouds" << std::endl;
+      std::vector<std::vector<bool>> absoluteT1List;
+      absoluteT1List.resize( ai.getAttributeCount() );
+      for ( int attrIdx = 0; attrIdx < ai.getAttributeCount(); ++attrIdx ) {
+        for ( uint32_t mapIdx = 0; mapIdx < sps.getMapCountMinus1( atlasIndex ) + 1; ++mapIdx ) {
+          absoluteT1List[attrIdx].push_back( params_.absoluteT1_ );
+        }
       }
-      if ( !isAttributes444 ) {  // lossy: convert 16-bit yuv444 to 8-bit RGB444
-        TRACE_PATCH( "lossy: convert 16-bit yuv444 to 8-bit RGB444 (convertYUV16ToRGB8) \n" );
-        reconstruct.convertYUV16ToRGB8();
-      } else {  // lossless: copy 16-bit RGB to 8-bit RGB
-        TRACE_PATCH( "lossy: lossless: copy 16-bit RGB to 8-bit RGB (copyRGB16ToRGB8) \n" );
-        reconstruct.copyRGB16ToRGB8();
+      for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
+        size_t accTilePointCount = 0;
+        reconstructs[frameIdx].addColors();
+        reconstructs[frameIdx].addColors16bit();
+        for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
+          auto& tile = context[frameIdx].getTile( tileIdx );
+          for ( size_t attIdx = 0; attIdx < 1; attIdx++ ) {
+            size_t updatedPointCount = colorPointCloud( reconstructs[frameIdx], context, tile, absoluteT1List[attIdx],
+                                                        sps.getMultipleMapStreamsPresentFlag( 0 ), ai.getAttributeCount(),
+                                                        accTilePointCount, gpcParams[i] );
+            std::cout << "Points Colored: " << updatedPointCount << std::endl;
+            accTilePointCount        = updatedPointCount;
+          }
+        }  // tile
       }
     }  // if ( ai.getAttributeCount() > 0 )
-    TRACE_RECFRAME( "AtlasFrameIndex = %d\n", frameIdx );
-    auto checksum = reconstructs[frameIdx].computeChecksum( true );
-    TRACE_RECFRAME( " MD5 checksum = " );
-    for ( auto& c : checksum ) { TRACE_RECFRAME( "%02x", c ); }
-    TRACE_RECFRAME( "\n" );
-  }  // frame
-  if ( !params_.keepIntermediateFiles_ && ( params_.use3dmc_ || params_.usePccRDO_ ) ) {
-    remove3DMotionEstimationFiles( path.str() );
+
+    /*
+    for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
+      for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
+        if (perFrameReconstructs[frameIdx][tileIdx].hasColors()) {
+          reconstructs[frameIdx].addColors();
+          reconstructs[frameIdx].addColors16bit();
+        }
+        reconstructs[frameIdx].appendPointSet(perFrameReconstructs[frameIdx][tileIdx]);
+        std::cout << "Per Tile Reconstructs: " << perFrameReconstructs[frameIdx][tileIdx].getColor().size() << " and Color at pos 0: " << perFrameReconstructs[frameIdx][tileIdx].getColor()[0][0] << std::endl;
+      }
+      std::cout << "Orientation " << i << " - Num points" <<  reconstructs[frameIdx].getPointCount() << std::endl;
+      std::cout << "Reconstructs has color: " << reconstructs[frameIdx].hasColors() << std::endl;
+    }
+    */
   }
-  createPatchFrameDataStructure( context );
-  params_.pointLocalReconstruction_   = ( pointLocalReconstructionOriginal != 0u );
-  params_.mapCountMinus1_             = layerCountMinus1Original;
-  params_.singleMapPixelInterleaving_ = ( singleMapPixelInterleavingOriginal != 0u );
+
+  for (size_t i = 0; i < contexts.size(); ++i) {
+    auto&             context    = contexts[i];
+    size_t            atlasIndex = context.getAtlasIndex();
+    auto&             sps        = context.getVps();
+    auto&             path       = paths[i];
+    auto&             partitions = allPartitions[i];
+    auto& ai = sps.getAttributeInformation( atlasIndex );
+  #ifdef CONFORMANCE_TRACE
+    for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
+      size_t numProjPoints = 0, numRawPoints = 0, numEomPoints = 0;
+      for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
+        auto& tile = context[frameIdx].getTile( tileIdx );
+        numProjPoints += tile.getTotalNumberOfRegularPoints();
+        numEomPoints += tile.getTotalNumberOfEOMPoints();
+        numRawPoints += tile.getTotalNumberOfRawPoints();
+      }  // tile
+      if ( ai.getAttributeCount() == 0 ) {
+        reconstructs[frameIdx].removeColors();
+        reconstructs[frameIdx].removeColors16bit();
+      } else {
+        bool isAttributes444 = static_cast<int>( params_.rawPointsPatch_ ) == 1;
+        if ( !isAttributes444 ) {  // lossy: convert 16-bit yuv444 to 8-bit RGB444
+          reconstructs[frameIdx].convertYUV16ToRGB8();
+        } else {
+          reconstructs[frameIdx].copyRGB16ToRGB8();
+        }
+      }
+      TRACE_PCFRAME( "AtlasFrameIndex = %d\n", frameIdx );
+      TRACE_PCFRAME( "PointCloudFrameOrderCntVal = %d, NumProjPoints = %zu, NumRawPoints = %zu, NumEomPoints = %zu,",
+                    frameIdx, numProjPoints, numRawPoints, numEomPoints );
+      auto checksum = reconstructs[frameIdx].computeChecksum( true );
+      TRACE_PCFRAME( " MD5 checksum = " );
+      for ( auto& c : checksum ) { TRACE_PCFRAME( "%02x", c ); }
+      TRACE_PCFRAME( "\n" );
+    }
+  #endif
+    std::cout << "Post Processing Point Clouds" << std::endl;
+    bool isAttributes444 = static_cast<int>( params_.rawPointsPatch_ ) == 1;
+    for ( size_t frameIdx = 0; frameIdx < sources.getFrameCount(); frameIdx++ ) {
+      GeneratePointCloudParameters ppSEIParams;
+      setPostProcessingSeiParameters( ppSEIParams, context );
+      auto& reconstruct = reconstructs[frameIdx];
+      auto& partition   = partitions[frameIdx];
+      printf(
+          "Post-Processing: attributeTransfer_ = %zu flagGeometrySmoothing_ = %d flagColorSmoothing_ = %d pbfEnableFlag "
+          "= %d \n",
+          params_.attrTransferFilterType_, ppSEIParams.flagGeometrySmoothing_, ppSEIParams.flagColorSmoothing_,
+          params_.pbfEnableFlag_ );
+      TRACE_PATCH(
+          "Post-Processing: attributeTransfer_ = %zu flagGeometrySmoothing_ = %d flagColorSmoothing_ = %d pbfEnableFlag "
+          "= %d \n",
+          params_.attrTransferFilterType_, ppSEIParams.flagGeometrySmoothing_, ppSEIParams.flagColorSmoothing_,
+          params_.pbfEnableFlag_ );
+
+      if ( params_.applyGeoSmoothingType_ != 0 && ppSEIParams.flagGeometrySmoothing_ ) {
+        PCCPointSet3 tempFrameBuffer = reconstruct;
+        if ( ppSEIParams.gridSmoothing_ ) {
+          smoothPointCloudPostprocess( reconstruct, params_.colorTransform_, ppSEIParams, partition );
+        }
+        if ( ai.getAttributeCount() > 0 ) {
+          if ( !ppSEIParams.pbfEnableFlag_ ) {
+            // These are different attribute transfer functions
+            if ( params_.attrTransferFilterType_ == 1 || params_.attrTransferFilterType_ == 5 ) {
+              TRACE_PATCH( " transferColors16bitBP \n" );
+              tempFrameBuffer.transferColors16bitBP( reconstruct,                      // target
+                                                    params_.attrTransferFilterType_,  // filterType
+                                                    int32_t( 0 ),                     // searchRange
+                                                    isAttributes444,                  // losslessAttribute
+                                                    8,                                // numNeighborsColorTransferFwd
+                                                    1,                                // numNeighborsColorTransferBwd
+                                                    true,                             // useDistWeightedAverageFwd
+                                                    true,                             // useDistWeightedAverageBwd
+                                                    true,          // skipAvgIfIdenticalSourcePointPresentFwd
+                                                    false,         // skipAvgIfIdenticalSourcePointPresentBwd
+                                                    4,             // distOffsetFwd
+                                                    4,             // distOffsetBwd
+                                                    1000,          // maxGeometryDist2Fwd
+                                                    1000,          // maxGeometryDist2Bwd
+                                                    1000 * 256,    // maxColorDist2Fwd
+                                                    1000 * 256 );  // maxColorDist2Bwd
+            } else if ( params_.attrTransferFilterType_ == 2 ) {
+              TRACE_PATCH( " transferColorWeight \n" );
+              tempFrameBuffer.transferColorWeight( reconstruct, 0.1 );
+            } else if ( params_.attrTransferFilterType_ == 3 ) {
+              TRACE_PATCH( " transferColorsFilter3 \n" );
+              tempFrameBuffer.transferColorsFilter3( reconstruct, int32_t( 0 ), isAttributes444 );
+            } else if ( params_.attrTransferFilterType_ == 7 || params_.attrTransferFilterType_ == 9 ) {
+              TRACE_PATCH( " transferColorsFilter3 \n" );
+              tempFrameBuffer.transferColorsBackward16bitBP( reconstruct,                      //  target
+                                                            params_.attrTransferFilterType_,  //  filterType
+                                                            int32_t( 0 ),                     //  searchRange
+                                                            isAttributes444,                  //  losslessAttribute
+                                                            8,             //  numNeighborsColorTransferFwd
+                                                            1,             //  numNeighborsColorTransferBwd
+                                                            true,          //  useDistWeightedAverageFwd
+                                                            true,          //  useDistWeightedAverageBwd
+                                                            true,          //  skipAvgIfIdenticalSourcePointPresentFwd
+                                                            false,         //  skipAvgIfIdenticalSourcePointPresentBwd
+                                                            4,             //  distOffsetFwd
+                                                            4,             //  distOffsetBwd
+                                                            1000,          //  maxGeometryDist2Fwd
+                                                            1000,          //  maxGeometryDist2Bwd
+                                                            1000 * 256,    //  maxColorDist2Fwd
+                                                            1000 * 256 );  //  maxColorDist2Bwd
+            }
+          }
+        }  // if ( ai.getAttributeCount() > 0 )
+      }
+      if ( ai.getAttributeCount() > 0 ) {
+        if ( params_.applyAttrSmoothingType_ != 0 && ppSEIParams.flagColorSmoothing_ ) {
+          TRACE_PATCH( " colorSmoothing \n" );
+          colorSmoothing( reconstruct, params_.colorTransform_, ppSEIParams );
+        }
+        if ( !isAttributes444 ) {  // lossy: convert 16-bit yuv444 to 8-bit RGB444
+          TRACE_PATCH( "lossy: convert 16-bit yuv444 to 8-bit RGB444 (convertYUV16ToRGB8) \n" );
+          reconstruct.convertYUV16ToRGB8();
+        } else {  // lossless: copy 16-bit RGB to 8-bit RGB
+          TRACE_PATCH( "lossy: lossless: copy 16-bit RGB to 8-bit RGB (copyRGB16ToRGB8) \n" );
+          reconstruct.copyRGB16ToRGB8();
+        }
+      }  // if ( ai.getAttributeCount() > 0 )
+      TRACE_RECFRAME( "AtlasFrameIndex = %d\n", frameIdx );
+      auto checksum = reconstructs[frameIdx].computeChecksum( true );
+      TRACE_RECFRAME( " MD5 checksum = " );
+      for ( auto& c : checksum ) { TRACE_RECFRAME( "%02x", c ); }
+      TRACE_RECFRAME( "\n" );
+    }  // frame
+    if ( !params_.keepIntermediateFiles_ && ( params_.use3dmc_ || params_.usePccRDO_ ) ) {
+      remove3DMotionEstimationFiles( path.str() );
+    }
+    createPatchFrameDataStructure( context );
+    params_.pointLocalReconstruction_   = ( pointLocalReconstructionOriginal != 0u );
+    params_.mapCountMinus1_             = layerCountMinus1Original;
+    params_.singleMapPixelInterleaving_ = ( singleMapPixelInterleavingOriginal != 0u );
+  }
   printf( "Done Encoder \n" );
   fflush( stdout );
-  */
   return 0;
 }
 
@@ -985,7 +1051,7 @@ int PCCEncoder::encode( const PCCGroupOfFrames& sources, PCCContext& context, PC
       auto&        tile = frame.getTile( tileIdx );
       if ( params_.pointLocalReconstruction_ ) {
         auto& videoGeometryMultiple = context.getVideoGeometryMultiple();
-        pointLocalReconstructionSearch( context, tile, videoGeometryMultiple, gpcParams );
+        pointLocalReconstructionSearch( context, tile, videoGeometryMultiple, gpcParams);
       }
       generatePointCloud( tileReconstrct, context, frameIdx, tileIdx, gpcParams, partitions[frameIdx], false );
       reconstructs[frameIdx].appendPointSet( tileReconstrct );
@@ -1244,7 +1310,7 @@ int PCCEncoder::encode( const PCCGroupOfFrames& sources, PCCContext& context, PC
         for ( size_t attIdx = 0; attIdx < 1; attIdx++ ) {
           size_t updatedPointCount = colorPointCloud( reconstructs[frameIdx], context, tile, absoluteT1List[attIdx],
                                                       sps.getMultipleMapStreamsPresentFlag( 0 ), ai.getAttributeCount(),
-                                                      accTilePointCount, gpcParams );
+                                                      accTilePointCount, gpcParams);
           accTilePointCount        = updatedPointCount;
         }
       }  // tile
@@ -5507,12 +5573,6 @@ bool PCCEncoder::generateSegments( const PCCGroupOfFrames& sources, PCCContext& 
 }
 
 bool PCCEncoder::placeSegments( const PCCGroupOfFrames& sources, PCCContext& context ) {
-  // TODO: Write Context and Sources to files
-
-  // TODO: Write Parameters to file
-
-  // TODO: Run in python instead
-
   bool res = true;
   if ( params_.tileSegmentationType_ == 1 ) {
     generateTilesFromImage( context );
@@ -5582,7 +5642,6 @@ bool PCCEncoder::placeSegments( const PCCGroupOfFrames& sources, PCCContext& con
     }  // tile
     resizeGeometryVideo( context, params_.videoEncoderOccupancyCodecId_ );
   }
-  // TODO: Read results from python again
   return res;
 }
 

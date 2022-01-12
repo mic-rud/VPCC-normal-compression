@@ -1322,6 +1322,7 @@ size_t PCCCodec::colorPointCloud( PCCPointSet3&                       reconstruc
   printChecksum( reconstruct, "colorPointCloud in" );
 #endif
   auto&        videoAttribute       = context.getVideoAttributesMultiple()[0];
+  std::cout << "Colors: " << videoAttribute.getFrame(0).getValue(0, 0, 0) << std::endl;
   auto&        videoAttributeFrame1 = context.getVideoAttributesMultiple()[1];
   const size_t mapCount             = params.mapCountMinus1_ + 1;
   if ( attributeCount == 0 ) {

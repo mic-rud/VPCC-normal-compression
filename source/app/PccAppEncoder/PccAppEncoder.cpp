@@ -1051,7 +1051,6 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
   while ( startFrameNumber < endFrameNumber0 ) {
     size_t     endFrameNumber = min( startFrameNumber + groupOfFramesSize0, endFrameNumber0 );
     std::vector<PCCContext> contexts(orientationCount);
-    std::cout << "Context size" << contexts.size();
     auto& context = contexts[0]; //TEMP
     for (size_t i = 0; i < orientationCount; ++i) {
       contexts[i].setBitstreamStat( bitstreamStat );
@@ -1072,7 +1071,6 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
     }
     std::cout << "Compressing " << contextIndex << " frames " << startFrameNumber << " -> " << endFrameNumber << "..."
               << std::endl;
-    std::cout << "Context size in encoder: " << contexts.size() << std::endl;
     int                ret = encoder.encodeMultiple( sources, contexts, reconstructs );
     PCCBitstreamWriter bitstreamWriter;
 #ifdef BITSTREAM_TRACE
