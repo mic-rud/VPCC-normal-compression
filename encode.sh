@@ -3,7 +3,7 @@ gdb --args ./bin/PccAppEncoder \
 	--config=cfg/common/ctc-common.cfg \
 	--config=cfg/condition/ctc-all-intra.cfg \
 	--config=cfg/sequence/longdress_vox10.cfg \
-	--config=cfg/rate/ctc-r1.cfg \
+	--config=cfg/rate/ctc-r5.cfg \
 	--uncompressedDataFolder=../../../mpeg_datasets/CfP/datasets/Dynamic_Objects/People/ \
 	--frameCount=1 \
 	--videoEncoderOccupancyPath=../external/HM/bin/TAppEncoderStatic \

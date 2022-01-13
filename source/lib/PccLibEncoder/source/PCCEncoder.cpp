@@ -113,7 +113,9 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
   std::vector<GeneratePointCloudParameters> gpcParams(contexts.size());
   std::vector<std::vector<std::vector<uint32_t>>> allPartitions(contexts.size());
   std::vector<std::stringstream> paths(contexts.size());
-  std::vector<std::vector<std::vector<PCCPointSet3>>> partialReconstructs(contexts.size()); // orientation -> frames -> tiles
+  //std::vector<std::vector<std::vector<PCCPointSet3>>> partialReconstructs(contexts.size()); // orientation -> frames -> tiles
+  std::vector<PCCGroupOfFrames> allLocalReconstructs(contexts.size());
+  for (auto& recon : allLocalReconstructs) { recon.setFrameCount(sources.getFrameCount()); }
 
   for (size_t i = 0; i < contexts.size(); ++i) {
     auto& context = contexts[i];
@@ -325,27 +327,26 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
 
 
     // RECONSTRUCT POINT CLOUD GEOMETRY
+    auto& localReconstructs = allLocalReconstructs[i];
     setGeneratePointCloudParameters( gpcParams[i], context );
     context.allocOneLayerData();
     auto& partitions = allPartitions[i];
-    auto& perFrameReconstructs = partialReconstructs[i];
-    perFrameReconstructs.resize(sources.getFrameCount());
+    //auto& perFrameReconstructs = partialReconstructs[i];
+    //perFrameReconstructs.resize(sources.getFrameCount());
     partitions.resize( context.size() );
     for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
       auto& frame = context[frameIdx];
-      auto& perTileReconstructs = perFrameReconstructs[frameIdx];
-      perTileReconstructs.resize(frame.getNumTilesInAtlasFrame());
       for ( size_t tileIdx = 0; tileIdx < frame.getNumTilesInAtlasFrame(); tileIdx++ ) {
         auto&        tile = frame.getTile( tileIdx );
         if ( params_.pointLocalReconstruction_ ) {
           auto& videoGeometryMultiple = context.getVideoGeometryMultiple();
           pointLocalReconstructionSearch( context, tile, videoGeometryMultiple, gpcParams[i]);
         }
-        generatePointCloud( perTileReconstructs[tileIdx], context, frameIdx, tileIdx, gpcParams[i], partitions[frameIdx], false );
+        generatePointCloud( localReconstructs[frameIdx], context, frameIdx, tileIdx, gpcParams[i], partitions[frameIdx], false );
         if ( frame.getNumTilesInAtlasFrame() != 1 ) {
           frame.getTitleFrameContext().appendPointToPixel( tile.getPointToPixel() );
         }
-        reconstructs[frameIdx].appendPointSet(perTileReconstructs[tileIdx]);
+        reconstructs[frameIdx].appendPointSet(localReconstructs[frameIdx]);
       }
     }
   }
@@ -359,13 +360,14 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     auto&             asps       = context.getAtlasSequenceParameterSet( atlasIndex );
     auto&             path       = paths[i];
     auto&             partitions = allPartitions[i];
+    auto&             localRecon = allLocalReconstructs[i];
 
     auto& ai = sps.getAttributeInformation( atlasIndex );
     if ( ai.getAttributeCount() > 0 ) {
       std::cout << "Attribute Coding starts" << std::endl;
       const size_t mapCount = params_.mapCountMinus1_ + 1;
       // GENERATE ATTRIBUTE
-      generateAttributeVideo( sources, reconstructs, context, params_ );
+      generateAttributeVideo( sources, localRecon, context, params_ );
       if ( params_.attributeBGFill_ < 3 ) {
         // ATTRIBUTE IMAGE PADDING
         tbb::task_arena limited( static_cast<int>( params_.nbThread_ ) );
@@ -582,10 +584,9 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     size_t            atlasIndex = context.getAtlasIndex();
     auto&             sps        = context.getVps();
     auto&             ai         = sps.getAttributeInformation( atlasIndex );
-    auto&             perFrameReconstructs = partialReconstructs[i];
+    //auto&             perFrameReconstructs = partialReconstructs[i];
 
-    PCCGroupOfFrames localReconstructs;
-    localReconstructs.setFrameCount(context.size());
+    auto& localReconstructs = allLocalReconstructs[i];
     if ( params_.flagGeometrySmoothing_ ) {
       if ( params_.pbfEnableFlag_ ) {
         gpcParams[i].pbfEnableFlag_    = true;
@@ -607,7 +608,11 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         reconstructs[frameIdx].appendPointSet( localReconstructs[frameIdx] );
     }
   }
+  std::cout << "Reconstructs, num points: " << reconstructs[0].getPointCount() << std::endl;
 
+  std::vector<size_t> accTilePointCounts(contexts.size());
+  for (auto& accTilePointCount : accTilePointCounts) { accTilePointCount = 0; }
+  size_t accTilePointCount = 0;
   for (size_t i = 0; i < contexts.size(); ++i) {
     auto&             context    = contexts[i];
     auto&             partitions = allPartitions[i];
@@ -625,7 +630,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         }
       }
       for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
-        size_t accTilePointCount = 0;
+        //auto& accTilePointCount = accTilePointCounts[i];
         reconstructs[frameIdx].addColors();
         reconstructs[frameIdx].addColors16bit();
         for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
@@ -640,6 +645,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         }  // tile
       }
     }  // if ( ai.getAttributeCount() > 0 )
+    std::cout << "Reconstructs, num points: " << reconstructs[0].getPointCount();
 
     /*
     for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
@@ -664,7 +670,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     auto&             path       = paths[i];
     auto&             partitions = allPartitions[i];
     auto& ai = sps.getAttributeInformation( atlasIndex );
-  #ifdef CONFORMANCE_TRACE
+#ifdef CONFORMANCE_TRACE
     for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
       size_t numProjPoints = 0, numRawPoints = 0, numEomPoints = 0;
       for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
@@ -692,7 +698,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
       for ( auto& c : checksum ) { TRACE_PCFRAME( "%02x", c ); }
       TRACE_PCFRAME( "\n" );
     }
-  #endif
+#endif
     std::cout << "Post Processing Point Clouds" << std::endl;
     bool isAttributes444 = static_cast<int>( params_.rawPointsPatch_ ) == 1;
     for ( size_t frameIdx = 0; frameIdx < sources.getFrameCount(); frameIdx++ ) {
@@ -4452,11 +4458,13 @@ bool PCCEncoder::generateSegments( const PCCPointSet3&                 source,
       }
     }
   }
-  if ( params_.enhancedOccupancyMapCode_ ) { generateEomPatch( source, frame ); }
-  if ( params_.pointLocalReconstruction_ ) {
-    for ( auto& patch : frame.getPatches() ) { patch.setOriginalIndex( patch.getIndex() ); }
-  }
   */
+  for (auto& frame : frames) {
+    if ( params_.enhancedOccupancyMapCode_ ) { generateEomPatch( source, frame.get() ); }
+    if ( params_.pointLocalReconstruction_ ) {
+      for ( auto& patch : frame.get().getPatches() ) { patch.setOriginalIndex( patch.getIndex() ); }
+    }
+  }
   return true;
 }
 

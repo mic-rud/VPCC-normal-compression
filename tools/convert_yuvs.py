@@ -10,7 +10,8 @@ def getInfoFromFilename(filename):
     '''
     size = re.findall(r"_\d{2,4}x\d{2,4}_", filename)[0][1:-1].split("x")
     size = [int(s) for s in size]
-    atlas = int(re.findall(r"Atlas\d{1,2}", filename)[0][5:])
+    atlas = int(re.findall(r"Orientation_\d{1,2}_", filename)[0][12:-1])
+    print("found")
     gof = int(re.findall(r"GOF\d{1,2}", filename)[0][3:])
 
     return size, atlas, gof

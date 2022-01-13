@@ -37,6 +37,7 @@
 /results/
 /bin/
 /lib/
+/venv/
 !dependencies/tbb/build/
 /dependencies/papi
 Debug
