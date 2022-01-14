@@ -53,7 +53,8 @@ void PCCPatchSegmenter3::compute( const PCCPointSet3&                 geometry,
                                   const PCCPatchSegmenter3Parameters& params,
                                   std::vector<PCCPatch>&              patches,
                                   std::vector<PCCPointSet3>&          subPointCloud,
-                                  float&                              distanceSrcRec ) {
+                                  float&                              distanceSrcRec,
+                                  std::vector<size_t>&                LocalPartitions ) {
   PCCVector3D* orientations     = nullptr;
   size_t       orientationCount = 0;
   if ( params.additionalProjectionPlaneMode_ == 0 ) {
@@ -252,6 +253,7 @@ void PCCPatchSegmenter3::compute( const PCCPointSet3&                 geometry,
                   rawPoints, resampled, subPointClouds, distanceSrcRec, normalsGen, orientations, orientationCount );
   std::cout << "[done]" << std::endl;
     
+  localPartitions = partition[i];
   // Write points to file 
   std::ofstream datastream;
   datastream.open("normals.txt", std::ios::out | std::ios::trunc);

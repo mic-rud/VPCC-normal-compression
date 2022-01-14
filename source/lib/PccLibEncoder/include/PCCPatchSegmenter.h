@@ -117,7 +117,8 @@ class PCCPatchSegmenter3 {
                 const PCCPatchSegmenter3Parameters& params,
                 std::vector<std::reference_wrapper<std::vector<PCCPatch>>> allPatches,
                 std::vector<std::reference_wrapper<std::vector<PCCPointSet3>>>  subPointClouds,
-                float&                              distanceSrcRec );
+                float&                              distanceSrcRec,
+                std::vector<size_t>                 localPartitions);
 
   void convertPointsToVoxels( const PCCPointSet3& source,
                               size_t              geoBits,

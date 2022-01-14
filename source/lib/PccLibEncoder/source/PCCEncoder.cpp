@@ -103,8 +103,28 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     }
   }
 
+  std::vector<std::vector<size_t>> segmentationResults(contexts.size());
+  std::vector<PCCGroupOfFrames> allLocalSources(contexts.size());
+
   // Segmentation
-  generateSegments( sources, contexts );
+  generateSegments( sources, contexts, segmentationResults);
+
+   // Create SubpointClouds
+  for (auto& src : allLocalSources) { src.setFrameCount(sources.getFrameCount()); }
+  for ( size_t frameIdx = 0; frameIdx < sources.getFrameCount(); frameIdx++ ) {
+    for (size_t i = 0; i < contexts.size(); ++size) {
+      if (sources[frameIdx].hasColors()) {
+        allLocalSources[i][frameIdx].addColors();
+        allLocalSources[i][frameIdx].addColors16bit();
+      }
+      if (sources[frameIdx].hasNormals()) {
+        allLocalSources[i][frameIdx].addNormals();
+      }
+    }
+  }
+  //generateLocalSources(sources, allLocalSources); //Todo
+
+
 
   // #2 Create Geometry and Aux info for each context
   PCCVideoEncoder videoEncoder;
@@ -116,6 +136,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
   //std::vector<std::vector<std::vector<PCCPointSet3>>> partialReconstructs(contexts.size()); // orientation -> frames -> tiles
   std::vector<PCCGroupOfFrames> allLocalReconstructs(contexts.size());
   for (auto& recon : allLocalReconstructs) { recon.setFrameCount(sources.getFrameCount()); }
+  for (auto& src : allLocalSources) { src.setFrameCount(sources.getFrameCount()); }
 
   for (size_t i = 0; i < contexts.size(); ++i) {
     auto& context = contexts[i];
@@ -595,8 +616,6 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         gpcParams[i].pbfLog2Threshold_ = params_.pbfLog2Threshold_;
         for ( auto& partition : partitions ) { partition.clear(); }
         //for ( auto& reconstruct : localReconstructs ) { reconstruct.clear(); } //Resetting deeper for perFrameReconstructs
-        partitions.clear();
-        partitions.resize( context.size() );
         for ( size_t fi = 0; fi < context.size(); fi++ ) {
           for ( size_t ti = 0; ti < context[fi].getNumTilesInAtlasFrame(); ti++ ) {
             generatePointCloud( localReconstructs[fi], context, fi, ti, gpcParams[i], partitions[fi], false );
@@ -4417,7 +4436,8 @@ bool PCCEncoder::generateSegments( const PCCPointSet3&                 source,
                                    std::vector<std::reference_wrapper<PCCAtlasFrameContext>>  frameContexts,
                                    const PCCPatchSegmenter3Parameters& segmenterParams,
                                    size_t                              frameIndex,
-                                   float&                              distanceSrcRec ) {
+                                   float&                              distanceSrcRec,
+                                   std::vector<size_t>                 localPartitions) {
   if ( source.getPointCount() == 0u ) { return true; }
   std::vector<std::reference_wrapper<PCCFrameContext>> frames; 
   std::cout << "Num orientations: " << frameContexts.size() << std::endl;
@@ -4439,7 +4459,7 @@ bool PCCEncoder::generateSegments( const PCCPointSet3&                 source,
     PCCPatchSegmenter3 segmenter;
     segmenter.setNbThread( params_.nbThread_ );
     segmenter.compute( source, frameIndex, segmenterParams, allPatches, srcPointClouds, //SrcPointCloudbyPatch needs to be changed
-                       distanceSrcRec );
+                       distanceSrcRec, localPartitions);
   } else {
     //TODO
     std::cout << "segmentaitonPartiallyAdditionalProjectionPlane not implemented" << std::endl;
@@ -5427,7 +5447,7 @@ void PCCEncoder::generateRawPointsAttributeImage( PCCContext&        context,
   }
 }
 
-bool PCCEncoder::generateSegments( const PCCGroupOfFrames& sources, std::vector<PCCContext>& contexts ) {
+bool PCCEncoder::generateSegments( const PCCGroupOfFrames& sources, std::vector<PCCContext>& contexts, std::vector<std::vector<size_t>>& allPartitions ) {
   PCCPatchSegmenter3Parameters params;
   bool                         res            = true;
   params.gridBasedSegmentation_               = params_.gridBasedSegmentation_;
@@ -5491,7 +5511,7 @@ bool PCCEncoder::generateSegments( const PCCGroupOfFrames& sources, std::vector<
       allFrames.push_back(contexts[orientation][i]);
     }
     float distanceSrcRec = 0;
-    if ( !generateSegments( sources[i], allFrames, params, i, distanceSrcRec ) ) {
+    if ( !generateSegments( sources[i], allFrames, params, i, distanceSrcRec, allPartitions[i]) ) {
       res = false;
       break;
     }

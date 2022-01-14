@@ -177,7 +177,7 @@ class PCCEncoder : public PCCCodec {
 
   //**patch segmentation**//
   bool generateSegments( const PCCGroupOfFrames& sources, PCCContext& context );
-  bool generateSegments( const PCCGroupOfFrames& sources, std::vector<PCCContext>& contexts );
+  bool generateSegments( const PCCGroupOfFrames& sources, std::vector<PCCContext>& contexts, std::vector<std::vector<size_t>>& allPartitions);
   bool generateSegments( const PCCPointSet3&                 source,
                          PCCAtlasFrameContext&               frameContext,
                          const PCCPatchSegmenter3Parameters& segmenterParams,
@@ -187,7 +187,8 @@ class PCCEncoder : public PCCCodec {
                          std::vector<std::reference_wrapper<PCCAtlasFrameContext>>  frameContexts,
                          const PCCPatchSegmenter3Parameters& segmenterParams,
                          size_t                              frameIndex,
-                         float&                              distanceSrcRec );
+                         float&                              distanceSrcRec,
+                         std::vector<size_t>&                localPartitions);
   bool placeSegments( const PCCGroupOfFrames& sources, PCCContext& context );
 
   //**video/image reneration and resizing**//
