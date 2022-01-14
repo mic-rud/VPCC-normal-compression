@@ -608,7 +608,9 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         reconstructs[frameIdx].appendPointSet( localReconstructs[frameIdx] );
     }
   }
-  std::cout << "Reconstructs, num points: " << reconstructs[0].getPointCount() << std::endl;
+  for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
+    std::cout << "Reconstructs Frame " << frameIdx <<" num points: " << reconstructs[frameIdx].getPointCount() << std::endl;
+  }
 
   std::vector<size_t> accTilePointCounts(contexts.size());
   for (auto& accTilePointCount : accTilePointCounts) { accTilePointCount = 0; }
@@ -4418,6 +4420,7 @@ bool PCCEncoder::generateSegments( const PCCPointSet3&                 source,
                                    float&                              distanceSrcRec ) {
   if ( source.getPointCount() == 0u ) { return true; }
   std::vector<std::reference_wrapper<PCCFrameContext>> frames; 
+  std::cout << "Num orientations: " << frameContexts.size() << std::endl;
   frames.reserve(frameContexts.size());
   for (size_t i = 0; i < frameContexts.size(); ++i) {
     frames.push_back(frameContexts[i].get().getTitleFrameContext());
@@ -5481,8 +5484,9 @@ bool PCCEncoder::generateSegments( const PCCGroupOfFrames& sources, std::vector<
   }
   float sumDistanceSrcRec = 0;
   std::vector<std::reference_wrapper<PCCAtlasFrameContext>> allFrames;
-  allFrames.reserve(contexts.size());
   for ( size_t i = 0; i < sources.getFrameCount(); i++ ) {
+    allFrames.clear();
+    allFrames.reserve(contexts.size());
     for ( size_t orientation = 0; orientation < contexts.size(); orientation++ ) {
       allFrames.push_back(contexts[orientation][i]);
     }
