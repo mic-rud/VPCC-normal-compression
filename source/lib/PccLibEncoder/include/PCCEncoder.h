@@ -442,6 +442,10 @@ class PCCEncoder : public PCCCodec {
                                                      const PCCPatchSegmenter3Parameters& segmenterParams,
                                                      size_t                              frameIndex,
                                                      float&                              distanceSrcRec );
+
+  void generatePartialPointClouds(const PCCGroupOfFrames& sources,
+                                  std::vector<PCCGroupOfFrames>& subPointClouds,
+                                  std::vector<std::vector<size_t>>& partitions);
   //**tools**//
   static inline uint64_t mortonAddr( const int32_t x, const int32_t y, const int32_t z );
   uint64_t               mortonAddr( const PCCPoint3D& vec, int depth );

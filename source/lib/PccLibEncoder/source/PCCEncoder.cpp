@@ -108,32 +108,21 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
 
   // Segmentation
   generateSegments( sources, contexts, segmentationResults);
+  generatePartialPointClouds(sources, allLocalSources, segmentationResults); 
 
-   // Create SubpointClouds
-  for (auto& src : allLocalSources) { src.setFrameCount(sources.getFrameCount()); }
-  for ( size_t frameIdx = 0; frameIdx < sources.getFrameCount(); frameIdx++ ) {
-    for (size_t i = 0; i < contexts.size(); ++size) {
-      if (sources[frameIdx].hasColors()) {
-        allLocalSources[i][frameIdx].addColors();
-        allLocalSources[i][frameIdx].addColors16bit();
-      }
-      if (sources[frameIdx].hasNormals()) {
-        allLocalSources[i][frameIdx].addNormals();
-      }
+  for (size_t i = 0; i < contexts.size(); ++i) {
+    for (size_t f = 0; f < sources.getFrameCount(); ++f){
+      std::cout << "Partial sources, point count: " << allLocalSources[i][f].getPointCount() << std::endl;
     }
   }
-  //generateLocalSources(sources, allLocalSources); //Todo
-
-
 
   // #2 Create Geometry and Aux info for each context
   PCCVideoEncoder videoEncoder;
   videoEncoder.setLogger( *logger_ );
-  const size_t      pointCount = sources[0].getPointCount();
+  const size_t      pointCount = sources[0].getPointCount(); // TODO?
   std::vector<GeneratePointCloudParameters> gpcParams(contexts.size());
   std::vector<std::vector<std::vector<uint32_t>>> allPartitions(contexts.size());
   std::vector<std::stringstream> paths(contexts.size());
-  //std::vector<std::vector<std::vector<PCCPointSet3>>> partialReconstructs(contexts.size()); // orientation -> frames -> tiles
   std::vector<PCCGroupOfFrames> allLocalReconstructs(contexts.size());
   for (auto& recon : allLocalReconstructs) { recon.setFrameCount(sources.getFrameCount()); }
   for (auto& src : allLocalSources) { src.setFrameCount(sources.getFrameCount()); }
@@ -146,7 +135,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     params_.initializeContext( context );
 
     // Segment Placement
-    placeSegments( sources, context );
+    placeSegments( allLocalSources[i], context );
 
     // updatePartitionInformation
     if ( params_.tileSegmentationType_ > 1 && params_.numMaxTilePerFrame_ > 1 ) {
@@ -172,7 +161,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     TRACE_PICTURE( "Occupancy\n" );
     TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0\n" );
     auto& videoBitstream = context.createVideoBitstream( VIDEO_OCCUPANCY );
-    generateOccupancyMapVideo( sources, context );
+    generateOccupancyMapVideo( allLocalSources[i], context );
     auto& videoOccupancyMap = context.getVideoOccupancyMap();
     videoEncoder.compress( videoOccupancyMap,                         // video
                           path.str(),                                // path
@@ -193,7 +182,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
                           8,                                         // internalBitDepth
                           false,                                     // useConversion
                           params_.keepIntermediateFiles_ );          // keepIntermediateFiles
-    if ( params_.offsetLossyOM_ > 0 ) { modifyOccupancyMap( sources, context ); }
+    if ( params_.offsetLossyOM_ > 0 ) { modifyOccupancyMap( allLocalSources[i], context ); }
     if ( !params_.useRawPointsSeparateVideo_ && ( params_.rawPointsPatch_ || params_.lossyRawPointsPatch_ ) ) {
       markRawPatchLocationOccupancyMapVideo( context );
     }
@@ -205,7 +194,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     }
 
     // Generate GEOMETRY IMAGE & dilation
-    generateGeometryVideo( sources, context );
+    generateGeometryVideo( allLocalSources[i], context );
 
     // ENCODE GEOMETRY IMAGE
     TRACE_PICTURE( "Geometry\n" );
@@ -259,7 +248,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         for ( size_t f = 0; f < frames.size(); ++f ) {
           auto& frame1 = context.getVideoGeometryMultiple()[1].getFrame( f );
           predictGeometryFrame( frames[f].getTitleFrameContext(), videoGeometry.getFrame( f ), frame1 );
-          dilate3DPadding( sources[f], frames[f], frames[f].getTitleFrameContext(), frame1,
+          dilate3DPadding( allLocalSources[i][f], frames[f], frames[f].getTitleFrameContext(), frame1,
                           videoOccupancyMap.getFrame( f ) );
         }
       }
@@ -388,7 +377,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
       std::cout << "Attribute Coding starts" << std::endl;
       const size_t mapCount = params_.mapCountMinus1_ + 1;
       // GENERATE ATTRIBUTE
-      generateAttributeVideo( sources, localRecon, context, params_ );
+      generateAttributeVideo( allLocalSources[i], localRecon, context, params_ );
       if ( params_.attributeBGFill_ < 3 ) {
         // ATTRIBUTE IMAGE PADDING
         tbb::task_arena limited( static_cast<int>( params_.nbThread_ ) );
@@ -598,6 +587,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
 
   // #Reconstruction of the Point Cloud
 
+  std::cout << "Geometry reconstruction (partial) " << std::endl;
   for ( auto& reconstruct : reconstructs ) { reconstruct.clear(); }
   for (size_t i = 0; i < contexts.size(); ++i) {
     auto&             context    = contexts[i];
@@ -605,9 +595,9 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     size_t            atlasIndex = context.getAtlasIndex();
     auto&             sps        = context.getVps();
     auto&             ai         = sps.getAttributeInformation( atlasIndex );
-    //auto&             perFrameReconstructs = partialReconstructs[i];
 
-    auto& localReconstructs = allLocalReconstructs[i];
+    auto& localReconstruct = allLocalReconstructs[i];
+    std::cout << localReconstruct.getFrameCount() << std::endl;
     if ( params_.flagGeometrySmoothing_ ) {
       if ( params_.pbfEnableFlag_ ) {
         gpcParams[i].pbfEnableFlag_    = true;
@@ -615,25 +605,25 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         gpcParams[i].pbfPassesCount_   = params_.pbfPassesCount_;
         gpcParams[i].pbfLog2Threshold_ = params_.pbfLog2Threshold_;
         for ( auto& partition : partitions ) { partition.clear(); }
-        //for ( auto& reconstruct : localReconstructs ) { reconstruct.clear(); } //Resetting deeper for perFrameReconstructs
+        for ( auto& reconstruct : localReconstruct ) { reconstruct.clear(); } //Resetting deeper for perFrameReconstructs
         for ( size_t fi = 0; fi < context.size(); fi++ ) {
+          std::cout << "Frame " << fi << " Context " << i << std::endl;
           for ( size_t ti = 0; ti < context[fi].getNumTilesInAtlasFrame(); ti++ ) {
-            generatePointCloud( localReconstructs[fi], context, fi, ti, gpcParams[i], partitions[fi], false );
+            generatePointCloud( localReconstruct[fi], context, fi, ti, gpcParams[i], partitions[fi], false );
           }
         }
       }
     }
     for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
-        reconstructs[frameIdx].appendPointSet( localReconstructs[frameIdx] );
+        reconstructs[frameIdx].appendPointSet( localReconstruct[frameIdx] );
     }
   }
-  for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
+  for ( size_t frameIdx = 0; frameIdx < reconstructs.getFrameCount(); frameIdx++ ) {
     std::cout << "Reconstructs Frame " << frameIdx <<" num points: " << reconstructs[frameIdx].getPointCount() << std::endl;
   }
 
-  std::vector<size_t> accTilePointCounts(contexts.size());
-  for (auto& accTilePointCount : accTilePointCounts) { accTilePointCount = 0; }
-  size_t accTilePointCount = 0;
+  std::vector<size_t> accTilePointCounts(sources.getFrameCount());
+  for (auto& acc : accTilePointCounts) { acc = 0;}
   for (size_t i = 0; i < contexts.size(); ++i) {
     auto&             context    = contexts[i];
     auto&             partitions = allPartitions[i];
@@ -651,7 +641,6 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
         }
       }
       for ( size_t frameIdx = 0; frameIdx < context.size(); frameIdx++ ) {
-        //auto& accTilePointCount = accTilePointCounts[i];
         reconstructs[frameIdx].addColors();
         reconstructs[frameIdx].addColors16bit();
         for ( size_t tileIdx = 0; tileIdx < context[frameIdx].getNumTilesInAtlasFrame(); tileIdx++ ) {
@@ -659,9 +648,9 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
           for ( size_t attIdx = 0; attIdx < 1; attIdx++ ) {
             size_t updatedPointCount = colorPointCloud( reconstructs[frameIdx], context, tile, absoluteT1List[attIdx],
                                                         sps.getMultipleMapStreamsPresentFlag( 0 ), ai.getAttributeCount(),
-                                                        accTilePointCount, gpcParams[i] );
+                                                        accTilePointCounts[frameIdx], gpcParams[i] );
             std::cout << "Points Colored: " << updatedPointCount << std::endl;
-            accTilePointCount        = updatedPointCount;
+            accTilePointCounts[frameIdx]        = updatedPointCount;
           }
         }  // tile
       }
@@ -4437,7 +4426,7 @@ bool PCCEncoder::generateSegments( const PCCPointSet3&                 source,
                                    const PCCPatchSegmenter3Parameters& segmenterParams,
                                    size_t                              frameIndex,
                                    float&                              distanceSrcRec,
-                                   std::vector<size_t>                 localPartitions) {
+                                   std::vector<size_t>&                localPartitions) {
   if ( source.getPointCount() == 0u ) { return true; }
   std::vector<std::reference_wrapper<PCCFrameContext>> frames; 
   std::cout << "Num orientations: " << frameContexts.size() << std::endl;
@@ -9725,6 +9714,33 @@ void PCCEncoder::segmentationPartiallyAddtinalProjectionPlane( const PCCPointSet
   patches.reserve( Orthogonal.size() + Additional.size() );
   std::copy( Orthogonal.begin(), Orthogonal.end(), std::back_inserter( patches ) );
   std::copy( Additional.begin(), Additional.end(), std::back_inserter( patches ) );
+}
+
+void PCCEncoder::generatePartialPointClouds( const PCCGroupOfFrames& sources,
+                                             std::vector<PCCGroupOfFrames>& subPointClouds,
+                                             std::vector<std::vector<size_t>>& partitions) {
+   // Create SubpointClouds
+  for (auto& src : subPointClouds) { src.setFrameCount(sources.getFrameCount()); }
+  for (size_t frameIdx = 0; frameIdx < sources.getFrameCount(); ++frameIdx) {
+    for (size_t i = 0; i < subPointClouds.size(); ++i) {
+      if (sources[frameIdx].hasColors()) {
+        subPointClouds[i][frameIdx].addColors();
+        subPointClouds[i][frameIdx].addColors16bit();
+      }
+      if (sources[frameIdx].hasNormals()) {
+        subPointClouds[i][frameIdx].addNormals();
+      }
+    }
+
+    // Order points to sub point cloud
+    auto& allPoints = sources[frameIdx];
+    auto& partition = partitions[frameIdx];
+    for (size_t pointIdx = 0; pointIdx < partition.size(); ++pointIdx) {
+      auto clusterIdx = partition[pointIdx];
+      PCCPointSet3 point = allPoints.getPointAtIndex(pointIdx);
+      subPointClouds[clusterIdx][frameIdx].appendPointSet(point);    
+    }
+  }
 }
 
 inline uint64_t PCCEncoder::mortonAddr( const int32_t x, const int32_t y, const int32_t z ) {

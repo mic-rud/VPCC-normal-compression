@@ -53,8 +53,7 @@ void PCCPatchSegmenter3::compute( const PCCPointSet3&                 geometry,
                                   const PCCPatchSegmenter3Parameters& params,
                                   std::vector<PCCPatch>&              patches,
                                   std::vector<PCCPointSet3>&          subPointCloud,
-                                  float&                              distanceSrcRec,
-                                  std::vector<size_t>&                LocalPartitions ) {
+                                  float&                              distanceSrcRec) {
   PCCVector3D* orientations     = nullptr;
   size_t       orientationCount = 0;
   if ( params.additionalProjectionPlaneMode_ == 0 ) {
@@ -164,7 +163,8 @@ void PCCPatchSegmenter3::compute( const PCCPointSet3&                 geometry,
                                   const PCCPatchSegmenter3Parameters& params,
                                   std::vector<std::reference_wrapper<std::vector<PCCPatch>>> allPatches,
                                   std::vector<std::reference_wrapper<std::vector<PCCPointSet3>>> subPointClouds,
-                                  float&                              distanceSrcRec ) {
+                                  float&                              distanceSrcRec,
+                                  std::vector<size_t>&                localPartitions ) {
   PCCVector3D* orientations     = nullptr;
   size_t       orientationCount = allPatches.size();
   if ( params.additionalProjectionPlaneMode_ == 0 ) {
@@ -253,12 +253,15 @@ void PCCPatchSegmenter3::compute( const PCCPointSet3&                 geometry,
                   rawPoints, resampled, subPointClouds, distanceSrcRec, normalsGen, orientations, orientationCount );
   std::cout << "[done]" << std::endl;
     
-  localPartitions = partition[i];
   // Write points to file 
   std::ofstream datastream;
   datastream.open("normals.txt", std::ios::out | std::ios::trunc);
   auto& positions = geometry.getPositions();
+  localPartitions.resize(partition.size());
   for (int i=0; i < positions.size(); ++i) {
+    // Local partitioning for sub point clouds
+    localPartitions[i] = partition[i];
+
     auto& point = positions[i];
     auto& normal = partition[i];
     datastream << point[0] << ", " << point[1] << ", " << point[2] << ", " << normal << std::endl;

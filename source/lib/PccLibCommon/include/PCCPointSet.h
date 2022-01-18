@@ -54,6 +54,31 @@ class PCCPointSet3 {
     assert( index < positions_.size() );
     return positions_[index];
   }
+
+  const PCCPointSet3 getPointAtIndex(size_t index) const{
+    PCCPointSet3 point;
+    point.addPoint( positions_[index]);
+    if ( hasColors() ) {
+      point.addColors16bit();
+      point.addColors();
+      point.setColor(0, colors_[index]);
+      point.setColor16bit(0, colors16bit_[index]);
+    }
+    if ( PCC_SAVE_POINT_TYPE ) { point.setType(0, types_[index]); }
+    if ( hasReflectances() ) { 
+      point.addReflectances();
+      point.setReflectance(0, reflectances_[index]);
+    }
+    if ( hasNormals() ) { 
+      point.addReflectances();
+      point.setNormal(0, normals_[index]);
+    }
+    point.setBoundaryPointType(0, boundaryPointTypes_[index]);
+    point.setPointPatchIndex(0, pointPatchIndexes_[index].first, pointPatchIndexes_[index].second);
+    return point;
+  }
+
+
   size_t appendPointSet( PCCPointSet3& pointSet ) {
     std::vector<PCCPoint3D>::iterator                itPositions;
     std::vector<PCCColor3B>::iterator                itColors;
