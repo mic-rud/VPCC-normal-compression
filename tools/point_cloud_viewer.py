@@ -36,11 +36,11 @@ def create_viewer(points, colors):
 
 
 
-filename = "./S26C03R03_rec_1051.ply"
+filename = "./S26C03R03_rec_1052.ply"
 points, colors = load_ply(filename)
 v = create_viewer(points, colors)
 
-filename = "../../../mpeg_datasets/CfP/datasets/Dynamic_Objects/People/8i/8iVFBv2/longdress/Ply/longdress_vox10_1051.ply"
+filename = "../../../mpeg_datasets/CfP/datasets/Dynamic_Objects/People/8i/8iVFBv2/longdress/Ply/longdress_vox10_1052.ply"
 points, colors = load_ply(filename)
 v = create_viewer(points, colors)
 

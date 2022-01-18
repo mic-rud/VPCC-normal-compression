@@ -1029,7 +1029,7 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
   PCCMetrics               metrics;
   PCCChecksum              checksum;
   PCCBitstreamStat         bitstreamStat;
-  SampleStreamV3CUnit      ssvu;
+  std::vector<SampleStreamV3CUnit>      ssvus;
   encoder.setLogger( logger );
   encoder.setParameters( encoderParams );
   metrics.setParameters( metricsParams );
@@ -1076,8 +1076,16 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
 #ifdef BITSTREAM_TRACE
     bitstreamWriter.setLogger( logger );
 #endif
-    ret |= bitstreamWriter.encode( context, ssvu );
+    // Write bistreams
+    for (size_t i = 0; i < orientationCount; ++i) {
+      SampleStreamV3CUnit ssvu;
+      auto& context = contexts[i];
+      ret |= bitstreamWriter.encode( context, ssvu );
+      ssvus.push_back(ssvu);
+    }
     clock.stop();
+
+    // Metrics
     PCCGroupOfFrames normals;
     if ( metricsParams.computeMetrics_ ) {
       bool bRunMetric = true;
@@ -1107,20 +1115,27 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
     contextIndex++;
   }
 
-  PCCBitstream bitstream;
-#if defined( BITSTREAM_TRACE ) || defined( CONFORMANCE_TRACE )
-  bitstream.setLogger( logger );
-  bitstream.setTrace( true );
-#endif
 
-  bitstreamStat.setHeader( bitstream.size() );
-  PCCBitstreamWriter bitstreamWriter;
-  size_t headerSize = bitstreamWriter.write( ssvu, bitstream, encoderParams.forcedSsvhUnitSizePrecisionBytes_ );
-  bitstreamStat.incrHeader( headerSize );
-  bitstream.write( encoderParams.compressedStreamPath_ );
-  bitstreamStat.trace();
-  std::cout << "Total bitstream size " << bitstream.size() << " B" << std::endl;
-  bitstream.computeMD5();
+  for (size_t i = 0; i < orientationCount; ++i) {
+    auto& ssvu = ssvus[i];
+    PCCBitstream bitstream;
+#if defined( BITSTREAM_TRACE ) || defined( CONFORMANCE_TRACE )
+    bitstream.setLogger( logger );
+    bitstream.setTrace( true );
+#endif
+    std::string path = removeFileExtension(encoderParams.compressedStreamPath_);
+    path += "O_";
+    path += std::to_string(i);
+    path += ".bin";
+    bitstreamStat.setHeader( bitstream.size() );
+    PCCBitstreamWriter bitstreamWriter;
+    size_t headerSize = bitstreamWriter.write( ssvu, bitstream, encoderParams.forcedSsvhUnitSizePrecisionBytes_ );
+    bitstreamStat.incrHeader( headerSize );
+    bitstream.write( path );
+    bitstreamStat.trace();
+    std::cout << "Total bitstream size " << bitstream.size() << " B" << std::endl;
+    bitstream.computeMD5();
+  }
 
   if ( metricsParams.computeMetrics_ ) { metrics.display(); }
   bool checksumEqual = true;
@@ -1128,7 +1143,7 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
     if ( encoderParams.rawPointsPatch_ && encoderParams.reconstructRawType_ != 0 ) {
       checksumEqual = checksum.compareSrcRec();
     }
-    checksum.write( encoderParams.compressedStreamPath_ );
+    checksum.write( encoderParams.compressedStreamPath_ ); // for each stream?
   }
   return checksumEqual ? 0 : -1;
 }
