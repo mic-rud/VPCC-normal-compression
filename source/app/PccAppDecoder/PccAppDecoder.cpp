@@ -168,6 +168,12 @@ bool parseParameters( int                       argc,
       decoderParams.patchColorSubsampling_, 
     "Enable per-patch color up-sampling");
 
+    // Number of input streams
+    ( "numInStreams",
+      decoderParams.numInStreams_, 
+      decoderParams.numInStreams_, 
+    "Number of input streams (1=normal operation)");
+
     opts.addOptions()
     ( "computeChecksum", 
       metricsParams.computeChecksum_,

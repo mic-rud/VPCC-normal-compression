@@ -49,6 +49,7 @@ PCCDecoderParameters::PCCDecoderParameters() {
   byteStreamVideoCoderGeometry_      = true;
   byteStreamVideoCoderAttribute_     = true;
   nbThread_                          = 1;
+  numInStreams_                      = 1;
   keepIntermediateFiles_             = false;
   pixelDeinterleavingType_           = -1;
   pointLocalReconstructionType_      = -1;
@@ -72,6 +73,7 @@ void PCCDecoderParameters::print() {
   std::cout << "\t startFrameNumber                    " << startFrameNumber_ << std::endl;
   std::cout << "\t colorTransform                      " << colorTransform_ << std::endl;
   std::cout << "\t nbThread                            " << nbThread_ << std::endl;
+  std::cout << "\t NumInStreams                        " << numInStreams_ << std::endl;
   std::cout << "\t keepIntermediateFiles               " << keepIntermediateFiles_ << std::endl;
   std::cout << "\t video encoding" << std::endl;
   std::cout << "\t   colorSpaceConversionPath          " << colorSpaceConversionPath_ << std::endl;

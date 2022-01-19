@@ -103,7 +103,7 @@ int PCCEncoder::encodeMultiple( const PCCGroupOfFrames& sources, std::vector<PCC
     }
   }
 
-  std::vector<std::vector<size_t>> segmentationResults(contexts.size());
+  std::vector<std::vector<size_t>> segmentationResults(sources.getFrameCount());
   std::vector<PCCGroupOfFrames> allLocalSources(contexts.size());
 
   // Segmentation
