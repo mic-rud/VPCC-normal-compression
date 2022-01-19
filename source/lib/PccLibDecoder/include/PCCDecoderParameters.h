@@ -58,8 +58,8 @@ class PCCDecoderParameters {
   PCCColorTransform colorTransform_;
   std::string       colorSpaceConversionPath_;
   std::string       inverseColorSpaceConversionConfig_;
-  size_t            nbThread_;
   size_t            numInStreams_;
+  size_t            nbThread_;
   bool              keepIntermediateFiles_;
   bool              patchColorSubsampling_;
   size_t            bestColorSearchRange_;

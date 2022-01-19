@@ -166,8 +166,7 @@ bool parseParameters( int                       argc,
     ( "patchColorSubsampling",
       decoderParams.patchColorSubsampling_, 
       decoderParams.patchColorSubsampling_, 
-    "Enable per-patch color up-sampling");
-
+    "Enable per-patch color up-sampling")
     // Number of input streams
     ( "numInStreams",
       decoderParams.numInStreams_, 
@@ -386,6 +385,7 @@ int main( int argc, char* argv[] ) {
   PCCMetricsParameters     metricsParams;
   PCCConformanceParameters conformanceParams;
   if ( !parseParameters( argc, argv, decoderParams, metricsParams, conformanceParams ) ) { return -1; }
+  std::cout << "Parameters parsed" << std::endl;
   if ( decoderParams.nbThread_ > 0 ) { tbb::task_scheduler_init init( static_cast<int>( decoderParams.nbThread_ ) ); }
 
   // Timers to count elapsed wall/user time
