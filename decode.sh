@@ -6,4 +6,4 @@ gdb --args ./bin/PccAppDecoder \
 	--videoDecoderAttributePath=../external/HM/bin/TAppDecoderStatic \
 	--colorSpaceConversionPath=../external/HDRTools/bin/HDRConvert \
 	--inverseColorSpaceConversionConfig=cfg/hdrconvert/yuv420torgb444.cfg \
-	--numInStreams=1
+	--numInStreams=6

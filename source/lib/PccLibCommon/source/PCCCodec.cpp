@@ -559,6 +559,7 @@ void PCCCodec::generatePointCloud( PCCPointSet3&                       reconstru
     auto width  = tile.getWidth();
     auto height = tile.getHeight();
     occupancyMap.resize( width * height, 0 );
+    std::cout << width << " , " << height << std::endl;
     for ( size_t v = 0; v < height; ++v ) {
       for ( size_t u = 0; u < width; ++u ) {
         occupancyMap[v * width + u] =
@@ -595,7 +596,7 @@ void PCCCodec::generatePointCloud( PCCPointSet3&                       reconstru
       }          // v0
     }
   }
-  // partition.resize( 0 );
+  //partition.resize( 0 );
   pointToPixel.resize( 0 );
   reconstruct.clear();
 
@@ -625,6 +626,7 @@ void PCCCodec::generatePointCloud( PCCPointSet3&                       reconstru
   eomPointsPerPatch.resize( totalPatchCount );
   uint32_t   index;
   const bool patchPrecedenceOrderFlag = context.getAtlasSequenceParameterSet( 0 ).getPatchPrecedenceOrderFlag();
+  std::cout << "Starting patch reconstruction " << patches.size() << std::endl;
   for ( index = 0; index < patches.size(); index++ ) {
     patchIndex                     = ( bDecoder && patchPrecedenceOrderFlag ) ? ( totalPatchCount - index - 1 ) : index;
     const size_t patchIndexPlusOne = patchIndex + 1;

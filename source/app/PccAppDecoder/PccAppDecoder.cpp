@@ -278,6 +278,128 @@ bool parseParameters( int                       argc,
   return !err.is_errored;
 }
 
+int decompressVideoMultiple( PCCDecoderParameters&       decoderParams,
+                             const PCCMetricsParameters& metricsParams,
+                             PCCConformanceParameters&   conformanceParams,
+                             StopwatchUserTime&          clock ) {
+  size_t numOrientations = decoderParams.numInStreams_;
+  std::vector<PCCBitstream>     bitstreams(numOrientations);
+  std::vector<PCCBitstreamStat> bitstreamStats(numOrientations);
+  PCCLogger        logger;
+  logger.initilalize( removeFileExtension( decoderParams.compressedStreamPath_ ), false );
+#if defined( BITSTREAM_TRACE ) || defined( CONFORMANCE_TRACE )
+  bitstream.setLogger( logger );
+  bitstream.setTrace( true );
+#endif
+  for (size_t i = 0; i < numOrientations; ++i) {
+    auto& bitstream = bitstreams[i];
+    std::string path = removeFileExtension(decoderParams.compressedStreamPath_);
+    path += "O_";
+    path += std::to_string(i);
+    path += ".bin";
+    std::cout << "Loading " << path << std::endl;
+    if ( !bitstream.initialize( path ) ) { return -1; }
+    bitstream.computeMD5();
+    bitstreamStats[i].setHeader( bitstream.size() );
+  }
+  size_t         frameNumber = decoderParams.startFrameNumber_;
+  PCCMetrics     metrics;
+  PCCChecksum    checksum;
+  PCCConformance conformance;
+  metrics.setParameters( metricsParams );
+  checksum.setParameters( metricsParams );
+  if ( metricsParams.computeChecksum_ ) { checksum.read( decoderParams.compressedStreamPath_ ); }
+  PCCDecoder decoder;
+  decoder.setLogger( logger );
+  decoder.setParameters( decoderParams );
+
+  std::vector<SampleStreamV3CUnit> ssvus; //Maybe reserve and push back?
+  //ssvus.reserve(numOrientations);
+  for (size_t i = 0; i < numOrientations; ++i) {
+    SampleStreamV3CUnit ssvu;
+    size_t              headerSize = pcc::PCCBitstreamReader::read( bitstreams[i], ssvu );
+    ssvus.push_back(ssvu);
+    bitstreamStats[i].incrHeader( headerSize );
+  }
+
+  bool bMoreData = true;
+  while ( bMoreData ) {
+    PCCGroupOfFrames reconstructs;
+    std::vector<PCCContext>       contexts(numOrientations);
+    for (size_t i = 0; i < numOrientations; ++i) {
+      contexts[i].setBitstreamStat( bitstreamStats[i] );
+    }
+    clock.start();
+    PCCBitstreamReader bitstreamReader;
+#ifdef BITSTREAM_TRACE
+    bitstreamReader.setLogger( logger );
+#endif
+    for (size_t i = 0; i < numOrientations; ++i) {
+      if ( bitstreamReader.decode( ssvus[i], contexts[i] ) == 0 ) { return 0; }
+#if 1
+      if ( contexts[0].checkProfile() != 0 ) {
+        printf( "Profile not correct... \n" );
+        return 0;
+      }
+      // TODO: May cause problems if different profileReconstructionIDC exist
+      decoderParams.setReconstructionParameters( contexts[i].getVps().getProfileTierLevel().getProfileReconstructionIdc() ); 
+      // allocate atlas structure
+      contexts[i].resizeAtlas( contexts[i].getVps().getAtlasCountMinus1() + 1 );
+    }
+    decoder.setReconstructionParameters( decoderParams );
+#endif
+
+    for ( uint32_t atlId = 0; atlId < contexts[0].getVps().getAtlasCountMinus1() + 1; atlId++ ) {
+      for (size_t i = 0; i < numOrientations; ++i) {
+        contexts[i].getAtlas( atlId ).allocateVideoFrames( contexts[i], 0 );
+        contexts[i].setAtlasIndex( atlId );
+      }
+      // first allocating the structures, frames will be added as the V3C
+      // units are being decoded ???
+      int retDecoding = decoder.decodeMultiple( contexts, reconstructs, atlId );
+      clock.stop();
+      if ( retDecoding != 0 ) { return retDecoding; }
+      if ( metricsParams.computeChecksum_ ) { checksum.computeDecoded( reconstructs ); }
+      if ( metricsParams.computeMetrics_ ) {
+        PCCGroupOfFrames sources;
+        PCCGroupOfFrames normals;
+        if ( !sources.load( metricsParams.uncompressedDataPath_, frameNumber,
+                            frameNumber + reconstructs.getFrameCount(), decoderParams.colorTransform_ ) ) {
+          return -1;
+        }
+        if ( !metricsParams.normalDataPath_.empty() ) {
+          if ( !normals.load( metricsParams.normalDataPath_, frameNumber, frameNumber + reconstructs.getFrameCount(),
+                              COLOR_TRANSFORM_NONE, true ) ) {
+            return -1;
+          }
+        }
+        metrics.compute( sources, reconstructs, normals );
+        sources.clear();
+        normals.clear();
+      }
+
+#ifdef CONFORMANCE_TRACE
+      if ( conformanceParams.checkConformance_ ) {
+        conformanceParams.levelIdc_ = context.getVps().getProfileTierLevel().getLevelIdc();
+        conformance.check( conformanceParams );
+      }
+#endif
+
+      if ( !decoderParams.reconstructedDataPath_.empty() ) {
+        reconstructs.write( decoderParams.reconstructedDataPath_, frameNumber, decoderParams.nbThread_, false );
+      } else {
+        frameNumber += reconstructs.getFrameCount();
+      }
+      bMoreData = ( ssvus[0].getV3CUnitCount() > 0 ); //May cause problems for different lengths of ssvus
+    }
+  }
+  for (auto& bitstreamStat : bitstreamStats) { bitstreamStat.trace(); }
+  if ( metricsParams.computeMetrics_ ) { metrics.display(); }
+  bool validChecksum = true;
+  if ( metricsParams.computeChecksum_ ) { validChecksum &= checksum.compareRecDec(); }
+  return !validChecksum;
+}
+
 int decompressVideo( PCCDecoderParameters&       decoderParams,
                      const PCCMetricsParameters& metricsParams,
                      PCCConformanceParameters&   conformanceParams,
@@ -393,7 +515,12 @@ int main( int argc, char* argv[] ) {
   pcc::chrono::StopwatchUserTime                    clockUser;
 
   clockWall.start();
-  int ret = decompressVideo( decoderParams, metricsParams, conformanceParams, clockUser );
+  int ret;
+  if (decoderParams.numInStreams_ == 1) {
+    ret = decompressVideo( decoderParams, metricsParams, conformanceParams, clockUser );
+  } else {
+    ret = decompressVideoMultiple( decoderParams, metricsParams, conformanceParams, clockUser );
+  }
   clockWall.stop();
 
   using namespace std::chrono;
