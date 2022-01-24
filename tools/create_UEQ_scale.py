@@ -1,5 +1,7 @@
 import os
-import subprocess
+from subprocess import check_call
+from multiprocessing.dummy import Pool
+
 
 
 """
@@ -8,11 +10,17 @@ Sequence Settings
 sequence_path = "/home/michael/Documents/mpeg_datasets/CfP/datasets/Dynamic_Objects/People/8i/8iVFBv2"
 target_path = "/home/michael/Documents/vpcc_ours_encoded/"
 objects = [
-        "longdress/",
-        "loot",
-        "redandblack",
+#        "longdress/",
+#        "loot",
+#        "redandblack",
         "soldier"
         ]
+offsets = {
+        "longdress" : 1051,
+        "loot" : 1000,
+        "redandblack" : 1450,
+        "soldier" : 536
+        }
 qualities = [
         "ctc-r1.cfg",
         "ctc-r2.cfg",
@@ -21,14 +29,28 @@ qualities = [
         "ctc-r5.cfg"
         ]
 frames_per_segment = 30 # Total number of segments for encoding
-
+orientation_separation = False #If seperation of streams or not is wanted
 
 """ 
 Encoder Settings
 """
+
 encoder_path = "/home/michael/Documents/Software/VPCC/mpeg-pcc-tmc2/bin/PccAppEncoder"
+video_encoder_path = "/home/michael/Documents/Software/VPCC/external/HM/bin/TAppEncoderStatic"
+color_space_conversion_path = "/home/michael/Documents/Software/VPCC/external/HDRTools/bin/HDRConvert"
+config_path = "/home/michael/Documents/Software/VPCC/mpeg-pcc-tmc2/cfg/"
+
+standard_settings = "--additionalProjectionPlaneMode=0 \
+--constrainedPack \
+--packingStrategy=2"
 
 
+
+"""
+Multiprocessing
+"""
+def call_command(command):
+    check_call(command, shell=True)
 """
 Script
 """
@@ -37,17 +59,47 @@ if not os.path.exists(target_path):
     print("Path not existant")
     exit(0)
 
+pool = Pool(8)
+
+commands = []
 for obj in objects:
     obj_path = os.path.join(sequence_path, obj, "Ply")
     obj_list = os.listdir(obj_path)
     obj_list.sort()
-    print(obj_list)
-    for quality in qualities:
-        for start_frame in range(0, 300, frames_per_segment):
+    for i, quality in enumerate(qualities):
+        save_to_path = os.path.join(os.path.join(target_path, obj), str(i+1))
+        if not os.path.exists(save_to_path):
+            os.makedirs(save_to_path)
+        for j, start_frame in enumerate(range(0, 300, frames_per_segment)):
             print("Encoding frames " + str(start_frame) + " to " + str(start_frame + frames_per_segment - 1))
 
             start_ply = obj_list[start_frame]
             print("Starting with " + str(start_ply))
 
+            command = encoder_path
+            command += " --configurationFolder=" + config_path
+            command += " --config=" + os.path.join(config_path, "common/ctc-common.cfg")
+            command += " --config=" + os.path.join(config_path, "condition/ctc-all-intra.cfg")
+            command += " --config=" + os.path.join(config_path, "sequence/" + obj + "_vox10.cfg")
+            command += " --config=" + os.path.join(config_path, "rate/" + quality)
+            command += " --startFrameNumber=" + str(start_frame + offsets[obj])
+            command += " " + standard_settings
+            command += " --videoEncoderOccupancyPath=" + video_encoder_path
+            command += " --videoEncoderAttributePath=" + video_encoder_path
+            command += " --videoEncoderGeometryPath=" + video_encoder_path
+            command += " --colorSpaceConversionPath=" + color_space_conversion_path
+            command += " --uncompressedDataFolder=" + os.path.dirname(os.path.dirname(sequence_path)) + "/"
+            command += " --frameCount=" + str(frames_per_segment)
+            command += " --compressedStreamPath=" + os.path.join(save_to_path, "segment_" + str(j) + "_")
+            command += " --reconstructedDataPath=" + os.path.join(save_to_path, "rec_%04d.ply")
 
 
+            if orientation_separation:
+                command += " --orientationSeparation"
+            print(command)
+
+            commands.append(command)
+
+pool.map(call_command, commands)
+pool.close()
+pool.join()
