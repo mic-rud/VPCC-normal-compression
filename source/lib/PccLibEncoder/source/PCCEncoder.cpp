@@ -2193,7 +2193,7 @@ void PCCEncoder::spatialConsistencyPackTetris( PCCFrameContext& frame,
   // main loop.
   for ( auto& patch : prevPatches ) {
     assert( patch.getSizeU0() <= occupancySizeU );
-    assert( patch.getSizeV0() <= occupancySizeV );
+    // assert( patch.getSizeV0() <= occupancySizeV );
     id++;
     float maxIou  = 0.0;
     int   bestIdx = -1;

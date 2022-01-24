@@ -1046,6 +1046,11 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
   } else if ( encoderParams.additionalProjectionPlaneMode_ == 4 ) {
     orientationCount = 18;
   }
+  ssvus.reserve(orientationCount);
+  for (size_t i = 0; i < orientationCount; ++i) {
+    SampleStreamV3CUnit ssvu;
+    ssvus.push_back(ssvu);
+  }
 
   // Place to get/set default values for gof metadata enabled flags (in sequence level).
   while ( startFrameNumber < endFrameNumber0 ) {
@@ -1078,10 +1083,9 @@ int compressMultipleVideo( const PCCEncoderParameters& encoderParams,
 #endif
     // Write bistreams
     for (size_t i = 0; i < orientationCount; ++i) {
-      SampleStreamV3CUnit ssvu;
+      auto& ssvu = ssvus[i];
       auto& context = contexts[i];
       ret |= bitstreamWriter.encode( context, ssvu );
-      ssvus.push_back(ssvu);
     }
     clock.stop();
 
