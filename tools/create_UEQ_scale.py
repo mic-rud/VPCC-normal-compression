@@ -1,5 +1,5 @@
 import os
-from subprocess import check_call
+from subprocess import check_call, check_output
 from multiprocessing.dummy import Pool
 
 
@@ -26,11 +26,12 @@ qualities = [
         "ctc-r2.cfg",
         "ctc-r3.cfg",
         "ctc-r4.cfg",
-        #"ctc-r5.cfg"
+        "ctc-r5.cfg"
         ]
 frames_per_segment = 30 # Total number of segments for encoding
 orientation_separation = False #If seperation of streams or not is wanted
 
+log_file = "UEQLog.txt"
 """ 
 Encoder Settings
 """
@@ -50,7 +51,13 @@ standard_settings = "--additionalProjectionPlaneMode=0 \
 Multiprocessing
 """
 def call_command(command):
-    check_call(command, shell=True)
+    ret_val = check_output(command, shell=True)
+    with open(log_file, "a") as file:
+        if ret_val == 0:
+            file.write("Successfully completed command: \n" + command + "\n\n")
+        else:
+            file.write("Error with command: \n" + command + "\n\n")
+
 """
 Script
 """
@@ -98,7 +105,12 @@ for obj in objects:
                 command += " --orientationSeparation"
             print(command)
 
-            commands.append(command)
+            #append command if outputfile is not existant
+            if not os.path.exists(os.path.join(save_to_path, "segment_" + str(j) + ".bin")):
+                commands.append(command)
+            else:
+                with open(log_file, "a") as file:
+                    file.write("Skipping " + save_to_path + " - Segment" + str(j) + "\n")
 
 pool.map(call_command, commands)
 pool.close()
