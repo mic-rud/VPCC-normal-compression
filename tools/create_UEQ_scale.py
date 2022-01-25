@@ -26,7 +26,7 @@ qualities = [
         "ctc-r2.cfg",
         "ctc-r3.cfg",
         "ctc-r4.cfg",
-        "ctc-r5.cfg"
+        #"ctc-r5.cfg"
         ]
 frames_per_segment = 30 # Total number of segments for encoding
 orientation_separation = False #If seperation of streams or not is wanted
@@ -59,7 +59,7 @@ if not os.path.exists(target_path):
     print("Path not existant")
     exit(0)
 
-pool = Pool(8)
+pool = Pool(4)
 
 commands = []
 for obj in objects:
@@ -90,7 +90,7 @@ for obj in objects:
             command += " --colorSpaceConversionPath=" + color_space_conversion_path
             command += " --uncompressedDataFolder=" + os.path.dirname(os.path.dirname(sequence_path)) + "/"
             command += " --frameCount=" + str(frames_per_segment)
-            command += " --compressedStreamPath=" + os.path.join(save_to_path, "segment_" + str(j) + "_")
+            command += " --compressedStreamPath=" + os.path.join(save_to_path, "segment_" + str(j) + ".bin")
             command += " --reconstructedDataPath=" + os.path.join(save_to_path, "rec_%04d.ply")
 
 

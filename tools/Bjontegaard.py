@@ -3,57 +3,85 @@ import scipy
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 
+class Bjontegaard_Delta:
+    def compute_BD_PSNR(self, model1, model2):
+        log_bitrates1 = np.log(model1.bitrates)
+        log_bitrates2 = np.log(model2.bitrates)
+
+        # Get bounds for integration
+        rL = np.max([np.min(log_bitrates1), np.min(log_bitrates2)])
+        rH = np.min([np.max(log_bitrates1), np.max(log_bitrates2)])
+
+        # Integrals of the polynomial in log space
+        P1 = np.poly1d(np.polyint(model1.parameters_PSNR))
+        P2 = np.poly1d(np.polyint(model2.parameters_PSNR))
+
+        bd_delta_PSNR = 1 / (rH-rL) * ( (P2(rH)-P1(rH)) - (P2(rL)-P1(rL)) )
+        print(bd_delta_PSNR)
+        return bd_delta_PSNR
+
+    def compute_BD_Rate(self, model1, model2):
+        D1 = model1.psnr_values
+        D2 = model2.psnr_values
+        
+        # Get bounds for integration
+        DL = np.max([np.min(D1), np.min(D2)])
+        DH = np.min([np.max(D1), np.max(D2)])
+
+        # Integrals of the polynomial
+        P1 = np.poly1d(np.polyint(model1.parameters_Rate))
+        P2 = np.poly1d(np.polyint(model2.parameters_Rate))
+
+        exponent = 1 / (DH-DL) * ( (P2(DH)-P1(DH)) - (P2(DL)-P1(DL)) )
+        bd_delta_rate = np.exp(exponent) - 1
+        print(bd_delta_rate)
+        return bd_delta_rate
+
+
+
+
 class Bjontegaard_Model:
     def __init__(self, bitrates, psnr_values):
         self.bitrates = bitrates
         self.psnr_values = psnr_values
 
-        self.parameters = [0, 0, 0, 0]
+        self.parameters_PSNR = [0, 0, 0, 0]
+        self.parameters_Rate = [0, 0, 0, 0]
         self.__update_model()
 
     def __update_model(self):
-        def bj_model(R, a, b, c, d):
-            value =  a * np.power(np.log(R), 3)
-            value += b * np.power(np.log(R), 2)
-            value += c * np.log(R)
-            value += d 
-            return value
-
-        self.parameters, _ = curve_fit(
-                bj_model,
-                self.bitrates,
-                self.psnr_values,
-                p0=self.parameters)
+        logR = np.log(self.bitrates) 
+        self.parameters_PSNR = np.polyfit(logR, self.psnr_values, 3)
+        self.parameters_Rate = np.polyfit(self.psnr_values, logR, 3)
 
     def evaluate(self, R):
-        value =  self.parameters[0] * np.power(np.log(R), 3)
-        value += self.parameters[1] * np.power(np.log(R), 2)
-        value += self.parameters[2] * np.log(R)
-        value += self.parameters[3] 
+        logR = np.log(R)
+        p = np.poly1d(self.parameters_PSNR)
+        value = p(logR)
         return value
 
     def plot(self, ax):
-        def bj_model(R, a, b, c, d):
-            value =  a * np.power(np.log(R), 3)
-            value += b * np.power(np.log(R), 2)
-            value += c * np.log(R)
-            value += d 
-            return value
         xdata = np.linspace(np.min(self.bitrates), np.max(self.bitrates), 100)
+        p = np.poly1d(self.parameters_PSNR)
+
         ax.scatter(self.bitrates, self.psnr_values)
-        ax.plot(xdata, bj_model(xdata,*self.parameters))
+        ax.plot(xdata, p(np.log(xdata)))
 
 
 if __name__ == "__main__":
     # Results of Zhu et al. ," View-Dependent Dynamic Point Cloud Compression"
     # on soldier, D1
-    bitrates = [24.35, 13.93, 9.27, 6.53]
+    bitrates1 = [22.35, 12.93, 8.27, 4.53]
+    bitrates2 = [24.35, 13.93, 9.27, 6.53]
     d1 = [71.17, 69.54, 67.62, 65.77]
-    metric = Bjontegaard_Model(bitrates, d1)
-    print(metric.evaluate(24.35))
-    print(metric.evaluate(19))
-    print(metric.evaluate(18))
-    print(metric.evaluate(13.93))
+    metric1 = Bjontegaard_Model(bitrates1, d1)
+    metric2 = Bjontegaard_Model(bitrates2, d1)
     fig, ax = plt.subplots()
-    metric.plot(ax)
+    metric1.plot(ax)
+    metric2.plot(ax)
+    BD_Delta = Bjontegaard_Delta()
+    BD_Delta.compute_BD_PSNR(metric1, metric2)
+    BD_Delta.compute_BD_Rate(metric1, metric2)
+    BD_Delta.compute_BD_PSNR(metric2, metric1)
+    BD_Delta.compute_BD_Rate(metric2, metric1)
     plt.show()
