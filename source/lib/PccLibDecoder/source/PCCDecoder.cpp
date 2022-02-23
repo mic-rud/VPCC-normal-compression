@@ -64,15 +64,22 @@ void PCCDecoder::setReconstructionParameters( const PCCDecoderParameters& params
   params_.applyOccupanySynthesisType_   = params.applyOccupanySynthesisType_;
 }
 
-int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFrames& reconstructs, int32_t atlasIndex = 0 ) {
+int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFrames& reconstructs, int32_t atlasIndex = 0) {
   if ( params_.nbThread_ > 0 ) { tbb::task_scheduler_init init( static_cast<int>( params_.nbThread_ ) ); }
   for (auto& context : contexts) { createPatchFrameDataStructure( context ); }
   std::cout << "Succesfull memory allocation" << std::endl;
 
   PCCVideoDecoder videoDecoder;
   videoDecoder.setLogger( *logger_ );
-  std::stringstream path;
-  path << removeFileExtension( params_.compressedStreamPath_ ) << "_dec_GOF" << contexts[0].getVps().getV3CParameterSetId() << "_";
+
+  // Split paths of all strings
+  std::vector<std::string> all_paths;
+  std::string token;
+  std::istringstream paths(params_.compressedStreamPath_);
+  while (std::getline(paths, token, ',')){
+    all_paths.push_back(token);
+  }
+
   size_t            frameCount       = contexts[0].size();
 
   GeneratePointCloudParameters gpcParams;
@@ -81,7 +88,8 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
   std::vector<std::vector<uint32_t>> partitions(frameCount);
 
   for (size_t i = 0; i < contexts.size(); ++i){
-    auto& context = contexts[i];
+    auto& path                         = all_paths[i];
+    auto& context                      = contexts[i];
     auto&             sps              = context.getVps();
     auto&             ai               = sps.getAttributeInformation( atlasIndex );
     auto&             oi               = sps.getOccupancyInformation( atlasIndex );
@@ -104,7 +112,7 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
     TRACE_PICTURE( "MapIdx = 0, AuxiliaryVideoFlag = 0\n" );
     videoDecoder.decompress( context.getVideoOccupancyMap(),                // video
                             context,                                       // contexts
-                            path.str(),                                    // path
+                            path,                                    // path
                             context.getVideoBitstream( VIDEO_OCCUPANCY ),  // bitstream
                             params_.byteStreamVideoCoderOccupancy_,        // byte stream video coder
                             occupancyCodecId,                              // codecId
@@ -127,7 +135,7 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
         auto& videoBitstream = context.getVideoBitstream( geometryIndex );
         videoDecoder.decompress( context.getVideoGeometryMultiple( mapIndex ),  // video
                                 context,                                       // contexts
-                                path.str(),                                    // path
+                                path,                                    // path
                                 videoBitstream,                                // bitstream
                                 params_.byteStreamVideoCoderGeometry_,         // byte stream video coder
                                 geometryCodecId,                               // codecId
@@ -152,7 +160,7 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
       fflush( stdout );
       videoDecoder.decompress( context.getVideoGeometryMultiple( 0 ),  // video
                               context,                                // contexts
-                              path.str(),                             // path
+                              path,                             // path
                               videoBitstream,                         // bitstream
                               params_.byteStreamVideoCoderGeometry_,  // byte stream video coder
                               geometryCodecId,                        // codecId
@@ -175,7 +183,7 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
           getCodedCodecId( context, gi.getAuxiliaryGeometryCodecId(), params_.videoDecoderGeometryPath_ );
       videoDecoder.decompress( context.getVideoRawPointsGeometry(),    // video
                               context,                                // contexts
-                              path.str(),                             // path
+                              path,                             // path
                               videoBitstreamMP,                       // bitstream
                               params_.byteStreamVideoCoderGeometry_,  // byte stream video coder
                               auxGeometryCodecId,                     // codecId
@@ -213,7 +221,7 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
               auto& videoBitstream = context.getVideoBitstream( attributeIndex );
               videoDecoder.decompress( context.getVideoAttributesMultiple( mapIndex ),  // video
                                       context,                                         // contexts
-                                      path.str(),                                      // path
+                                      path,                                      // path
                                       videoBitstream,                                  // bitstream
                                       params_.byteStreamVideoCoderAttribute_,          // byte stream video coder
                                       attributeCodecId,                                // codecId
@@ -239,7 +247,7 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
             fflush( stdout );
             videoDecoder.decompress( context.getVideoAttributesMultiple( 0 ),     // video
                                     context,                                     // contexts
-                                    path.str(),                                  // path
+                                    path,                                  // path
                                     videoBitstream,                              // bitstream
                                     params_.byteStreamVideoCoderAttribute_,      // byte stream video coder
                                     attributeCodecId,                            // codecId
@@ -266,7 +274,7 @@ int PCCDecoder::decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFra
             printf( "CodecId auxAttributeCodecId = %d \n", (int)auxAttributeCodecId );
             videoDecoder.decompress( context.getVideoRawPointsAttribute(),        // video
                                     context,                                     // contexts
-                                    path.str(),                                  // path
+                                    path,                                  // path
                                     videoBitstreamMP,                            // bitstream
                                     params_.byteStreamVideoCoderAttribute_,      // byte stream video coder
                                     auxAttributeCodecId,                         // codecId

@@ -589,6 +589,7 @@ bool PCCPointSet3::read( const std::string& fileName, const bool readNormals ) {
   size_t       indexNY          = g_undefined_index;
   size_t       indexNZ          = g_undefined_index;
   const size_t attributeCount   = attributesInfo.size();
+  std::cout << "Num attributes in PC: " << attributeCount << std::endl;
   for ( size_t a = 0; a < attributeCount; ++a ) {
     const auto& attributeInfo = attributesInfo[a];
     if ( attributeInfo.name == "x" &&
@@ -641,6 +642,12 @@ bool PCCPointSet3::read( const std::string& fileName, const bool readNormals ) {
         color[0]    = atoi( tokens[indexR].c_str() );
         color[1]    = atoi( tokens[indexG].c_str() );
         color[2]    = atoi( tokens[indexB].c_str() );
+      }
+      if ( withNormals_ ) {
+        auto& normal = normals_[pointCounter];
+        normal[0]    = atoi( tokens[indexNX].c_str() );
+        normal[1]    = atoi( tokens[indexNY].c_str() );
+        normal[2]    = atoi( tokens[indexNZ].c_str() );
       }
       if ( hasReflectances() ) { reflectances_[pointCounter] = uint16_t( atoi( tokens[indexReflectance].c_str() ) ); }
       ++pointCounter;
@@ -711,6 +718,7 @@ bool PCCPointSet3::read( const std::string& fileName, const bool readNormals ) {
           auto& color = colors_[pointCounter];
           ifs.read( reinterpret_cast<char*>( &color[2] ), sizeof( uint8_t ) );
         } else if ( a == indexNX ) {
+          std::cout << "Read normals: " <<std::endl; 
           if ( attributeInfo.byteCount == 4 ) {
             float nx;
             ifs.read( reinterpret_cast<char*>( &nx ), sizeof( float ) );

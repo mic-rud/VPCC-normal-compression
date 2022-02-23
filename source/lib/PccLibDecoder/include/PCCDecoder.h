@@ -60,9 +60,10 @@ class PCCDecoder : public PCCCodec {
   ~PCCDecoder();
 
   int decode( PCCContext& context, PCCGroupOfFrames& reconstruct, int32_t atlasIndex );
-  int decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFrames& reconstruct, int32_t atlasIndex );
+  int decodeMultiple( std::vector<PCCContext>& contexts, PCCGroupOfFrames& reconstruct, int32_t atlasIndex);
 
   void setParameters( const PCCDecoderParameters& params );
+  const PCCDecoderParameters& getParameters() { return params_; };
   void setReconstructionParameters( const PCCDecoderParameters& params );
   void setPostProcessingSeiParameters( GeneratePointCloudParameters& gpcParams, PCCContext& context, size_t atglIndex );
   void setGeneratePointCloudParameters( GeneratePointCloudParameters& gpcParams,

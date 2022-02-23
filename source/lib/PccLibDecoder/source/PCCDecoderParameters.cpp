@@ -103,8 +103,9 @@ bool PCCDecoderParameters::check() {
   }
 
   if ( compressedStreamPath_.empty() || !exist( compressedStreamPath_ ) ) {
-    ret = false;
-    std::cerr << "compressedStreamPath not set or exist\n";
+    // TODO check for splitted paths
+    //ret = false;
+    //std::cerr << "compressedStreamPath not set or exist\n";
   }
   if ( inverseColorSpaceConversionConfig_.empty() || !exist( inverseColorSpaceConversionConfig_ ) ) {
     ret = false;

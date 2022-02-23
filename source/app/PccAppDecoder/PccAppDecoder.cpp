@@ -48,6 +48,7 @@
 #include "PCCMetricsParameters.h"
 #include "PCCConformanceParameters.h"
 #include "PCCConformance.h"
+#include <sstream>
 #include <program_options_lite.h>
 #include <tbb/tbb.h>
 
@@ -285,18 +286,34 @@ int decompressVideoMultiple( PCCDecoderParameters&       decoderParams,
   size_t numOrientations = decoderParams.numInStreams_;
   std::vector<PCCBitstream>     bitstreams(numOrientations);
   std::vector<PCCBitstreamStat> bitstreamStats(numOrientations);
+
+  // Split paths of all strings
+  std::vector<std::string> all_paths;
+  std::string token;
+  std::istringstream paths(decoderParams.compressedStreamPath_);
+
+  while (std::getline(paths, token, ',')){
+    all_paths.push_back(token);
+  }
+
   PCCLogger        logger;
-  logger.initilalize( removeFileExtension( decoderParams.compressedStreamPath_ ), false );
+  logger.initilalize( removeFileExtension( all_paths[0] ), false );
 #if defined( BITSTREAM_TRACE ) || defined( CONFORMANCE_TRACE )
   bitstream.setLogger( logger );
   bitstream.setTrace( true );
 #endif
+
+  // Reset num orientations to account for None data
+  numOrientations = all_paths.size();
+
   for (size_t i = 0; i < numOrientations; ++i) {
     auto& bitstream = bitstreams[i];
-    std::string path = removeFileExtension(decoderParams.compressedStreamPath_);
+    std::string path = all_paths[i];
+    /*
     path += "O_";
     path += std::to_string(i);
     path += ".bin";
+    */
     std::cout << "Loading " << path << std::endl;
     if ( !bitstream.initialize( path ) ) { return -1; }
     bitstream.computeMD5();
@@ -308,7 +325,9 @@ int decompressVideoMultiple( PCCDecoderParameters&       decoderParams,
   PCCConformance conformance;
   metrics.setParameters( metricsParams );
   checksum.setParameters( metricsParams );
-  if ( metricsParams.computeChecksum_ ) { checksum.read( decoderParams.compressedStreamPath_ ); }
+  for (auto& path : all_paths) {
+    if ( metricsParams.computeChecksum_ ) { checksum.read( path ); }
+  }
   PCCDecoder decoder;
   decoder.setLogger( logger );
   decoder.setParameters( decoderParams );

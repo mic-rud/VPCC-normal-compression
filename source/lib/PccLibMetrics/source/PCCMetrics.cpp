@@ -89,6 +89,7 @@ void QualityMetrics::compute( const PCCPointSet3& pointcloudA, const PCCPointSet
   const size_t num_results_incr = 5;
 
   auto& normalsB = pointcloudB.getNormals();
+  std::cout << "Num normals in B" << normalsB.size() << std::endl;
   for ( size_t indexA = 0; indexA < pointcloudA.getPointCount(); indexA++ ) {
     // For point 'i' in A, find its nearest neighbor in B. store it in 'j'
     size_t num_results = 0;
