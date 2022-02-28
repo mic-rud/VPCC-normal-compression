@@ -101,6 +101,10 @@ bool parseParameters( int argc, char* argv[], PCCMetricsParameters& metricsParam
       metricsParams.neighborsProc_,
       metricsParams.neighborsProc_,
       "0(undefined), 1(average), 2(weighted average), 3(min), 4(max) neighbors with same geometric distance" ) 
+    ( "logFileName", 
+      metricsParams.logFileName_,
+      metricsParams.logFileName_,
+      "Name of the log file to write to" ) 
     ( "nbThread", 
       metricsParams.nbThread_, 
       metricsParams.nbThread_,
@@ -134,11 +138,19 @@ bool parseParameters( int argc, char* argv[], PCCMetricsParameters& metricsParam
 int computeMetrics( const PCCMetricsParameters& metricsParams, StopwatchUserTime& clock ) {
   PCCMetrics metrics;
   metrics.setParameters( metricsParams );
+
+  // Create a empty logfile
+  std::ofstream outfile;
+  outfile.open(metricsParams.logFileName_);
+  outfile << "P2P(MSE),P2P(PSNR),P2C(MSE),P2C(PSNR),c1(MSE),c1(PSNR),c1(MSE),c1(PSNR),c1(MSE),c1(PSNR)," << std::endl;
+  outfile.close();
+
   for ( size_t frameIndex = metricsParams.startFrameNumber_;
         frameIndex < metricsParams.startFrameNumber_ + metricsParams.frameCount_; frameIndex++ ) {
     PCCGroupOfFrames sources;
     PCCGroupOfFrames reconstructs;
     PCCGroupOfFrames normals;
+
     if ( !sources.load( metricsParams.uncompressedDataPath_, frameIndex, frameIndex + 1, COLOR_TRANSFORM_NONE ) ) {
       return -1;
     }
@@ -154,6 +166,7 @@ int computeMetrics( const PCCMetricsParameters& metricsParams, StopwatchUserTime
     metrics.compute( sources, reconstructs, normals );
   }
   metrics.display();
+  metrics.write(metricsParams.logFileName_);
   return 0;
 }
 

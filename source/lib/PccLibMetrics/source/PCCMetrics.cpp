@@ -72,6 +72,25 @@ QualityMetrics::QualityMetrics() :
 
 void QualityMetrics::setParameters( const PCCMetricsParameters& params ) { params_ = params; }
 
+void QualityMetrics::write( const std::string& filename ) {
+  std::ofstream outfile;
+  outfile.open(filename, std::ios_base::app);
+
+  outfile << c2cMse_ << ",";
+  outfile << c2cPsnr_ << ",";
+  outfile << c2pMse_ << ",";
+  outfile << c2pPsnr_ << ",";
+
+  for (size_t i = 0; i < 3; ++i) {
+    outfile << colorMse_[i] << ",";
+    outfile << colorPsnr_[i] << ",";
+  }
+
+  outfile << std::endl;
+
+  outfile.close();
+}
+
 void QualityMetrics::compute( const PCCPointSet3& pointcloudA, const PCCPointSet3& pointcloudB ) {
   double maxC2c         = ( std::numeric_limits<double>::min )();
   double maxC2p         = ( std::numeric_limits<double>::min )();
@@ -389,5 +408,12 @@ void PCCMetrics::display() {
     quality1_[i].print( '1' );
     quality2_[i].print( '2' );
     qualityF_[i].print( 'F' );
+  }
+}
+
+void PCCMetrics::write(const std::string& filename) {
+  printf( "logging results...\n" );
+  for ( size_t i = 0; i < qualityF_.size(); i++ ) {
+    qualityF_[i].write(filename);
   }
 }

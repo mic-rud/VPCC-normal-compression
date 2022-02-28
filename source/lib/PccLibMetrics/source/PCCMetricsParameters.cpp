@@ -45,6 +45,7 @@ PCCMetricsParameters::PCCMetricsParameters() {
   uncompressedDataPath_   = {};
   reconstructedDataPath_  = {};
   normalDataPath_         = {};
+  logFileName_            = {};
   nbThread_               = 0;
   resolution_             = 1023;
   dropDuplicates_         = 2;
@@ -73,6 +74,7 @@ void PCCMetricsParameters::print() {
   std::cout << "\t   frameCount                           " << frameCount_ << std::endl;
   std::cout << "\t   uncompressedDataPath                 " << uncompressedDataPath_ << std::endl;
   std::cout << "\t   reconstructedDataPath                " << reconstructedDataPath_ << std::endl;
+  std::cout << "\t   logFileName                          " << logFileName_ << std::endl;
   std::cout << "\t   normalDataPath                       " << normalDataPath_ << std::endl;
   std::cout << "\t   nbThread                             " << nbThread_ << std::endl;
   std::cout << "\t   resolution                           " << resolution_ << std::endl;

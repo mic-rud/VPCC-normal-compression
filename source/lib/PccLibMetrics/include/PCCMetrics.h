@@ -62,6 +62,8 @@ class QualityMetrics {
 
   void print( char code );
 
+  void write(const std::string& filename);
+
  private:
   // point-2-point ( cloud 2 cloud ), benchmark metric
   float c2cMse_;
@@ -99,6 +101,7 @@ class PCCMetrics {
                 const PCCGroupOfFrames& normals );
   void compute( PCCPointSet3& source, PCCPointSet3& reconstruct, const PCCPointSet3& normalSource );
   void display();
+  void write(const std::string& filename);
 
  private:
   std::vector<size_t>         sourcePoints_;

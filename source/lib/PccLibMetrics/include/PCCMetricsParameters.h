@@ -57,6 +57,7 @@ class PCCMetricsParameters {
   std::string uncompressedDataPath_;
   std::string reconstructedDataPath_;
   std::string normalDataPath_;
+  std::string logFileName_;
 
   size_t nbThread_;
 
