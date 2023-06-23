@@ -2,7 +2,7 @@
 
 Accompaning repository to the [paper](https://dl.acm.org/doi/abs/10.1145/3552457.3555732) **View-Adaptive Streaming of Point Cloud Scenes through combined Decomposition and Video-based Coding**, presented at APCCPA '22: 1st International Workshop on Advances in Point Cloud Compression, Processing and Analysis 
 
-This repository is based on [mpeg-tmc2](https://github.com/MPEGGroup/mpeg-pcc-tmc2).
+This repository is based on [mpeg-tmc2](https://github.com/MPEGGroup/mpeg-pcc-tmc2). You can find detailed documentation on the V-PCC codec here.
 Configurations are designed for the [8i VFB v2](http://plenodb.jpeg.org/pc/8ilabs/) dataset.
 
 ## Building
