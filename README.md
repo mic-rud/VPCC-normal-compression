@@ -13,6 +13,20 @@ You can run the installation script directly using
     ./build.sh
 ```
 
+### Verify installation
+Verify the correctness of the build:
+
+```
+    ./encode.sh
+    ./decode.sh
+    ./compute_metrics.sh
+```
+
+You will need to change the following paths for that:
+	*--uncompressedDataFolder=/path/to/8iData/* in *encode.sh*
+ 	*--uncompressedDataPath=/path/to/8iData/* in *compute_metrics.sh*
+  and
+  	*--normalDataPath=/path/to/8iNormals/* in *compute_metrics.sh*, if you have normals available. Otherwise, remove this argument.
 
 ## Running
 
